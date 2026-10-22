@@ -5,9 +5,9 @@ import * as THREE from 'three';
 import {
   AVATAR_PALETTES as AVATAR_PALETTE_LIST,
   buildAvatar, buildPet, buildTree, buildPalm, buildRock, buildCrystal,
-  buildLavaPool, buildFlower, buildNeonBlock, buildChest, buildCoinPile,
+  buildLavaPool, buildFlower, buildNeonBlock, buildChest, buildCoinPile, buildSign,
 } from './models.js';
-import { BREAKABLES } from './data.js';
+import { BREAKABLES, ZONES, MUTATIONS } from './data.js';
 
 const ZONE_SKY = {
   1: { bg: '#9bd8ff', fog: '#c6ecff', sun: '#fff4d6', sunI: 2.1, hemi: '#cfe9ff', ground: '#6fbf55' },
@@ -38,6 +38,8 @@ export class World {
     this.cb = callbacks;
     this.breakables = [];
     this.hitMeshes = [];
+    this.portals = [];
+    this.mode = 'hub';
     this.pets = [];
     this.target = null;
     this.queued = false;
@@ -77,6 +79,7 @@ export class World {
     this.tmpVec = new THREE.Vector3();
 
     this.#setupLights();
+    this.#setupSky();
     this.#setupGroundStatic();
     this.#buildPlayer();
     this.#buildPets([]);
@@ -111,6 +114,36 @@ export class World {
     this.scene.add(this.fill);
 
     this.pointLights = [];
+  }
+
+  #setupSky() {
+    const geo = new THREE.SphereGeometry(160, 24, 16);
+    const colors = new Float32Array(geo.attributes.position.count * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.skyDome = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false }),
+    );
+    this.skyDome.frustumCulled = false;
+    this.scene.add(this.skyDome);
+    this.#paintSky('#bfe4ff', '#7fc6ff');
+  }
+
+  /** Repeint le dôme de ciel (bas → haut). */
+  #paintSky(horizon, zenith) {
+    const geo = this.skyDome.geometry;
+    const pos = geo.attributes.position;
+    const col = geo.attributes.color;
+    const bottom = new THREE.Color(horizon);
+    const top = new THREE.Color(zenith);
+    const tmp = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / 160; // -1 .. 1
+      const t = THREE.MathUtils.clamp((y + 0.15) / 0.95, 0, 1);
+      tmp.copy(bottom).lerp(top, Math.pow(t, 0.75));
+      col.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    }
+    col.needsUpdate = true;
   }
 
   #setupGroundStatic() {
@@ -175,16 +208,42 @@ export class World {
     this.petGroup = new THREE.Group();
     this.scene.add(this.petGroup);
     this.pets = defs.map((def, i) => {
-      const model = buildPet(def);
+      const mutation = def.mutation || 'normal';
+      const model = buildPet(def, mutation);
       const scale = def.rarity === 'secret' ? 0.85 : def.rarity === 'mythique' ? 0.78 : 0.7;
       model.scale.setScalar(scale);
       this.petGroup.add(model);
+
+      // halo coloré sous les pets mutés
+      let halo = null;
+      if (mutation !== 'normal' && MUTATIONS[mutation]) {
+        halo = new THREE.Mesh(
+          new THREE.RingGeometry(0.42, 0.62, 20),
+          new THREE.MeshBasicMaterial({
+            color: MUTATIONS[mutation].color,
+            transparent: true,
+            opacity: 0.55,
+            side: THREE.DoubleSide,
+          }),
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = 0.02;
+        this.petGroup.add(halo);
+      }
+
+      const animatedMats = [];
+      if (mutation !== 'normal') {
+        model.traverse((o) => { if (o.isMesh && o.userData.mutated) animatedMats.push(o.material); });
+      }
+
       return {
         def,
+        mutation,
         model,
+        halo,
+        animatedMats,
         index: i,
         angle: (i / Math.max(1, defs.length)) * Math.PI * 2,
-        baseY: 0,
         hop: Math.random() * 6,
         lunge: 0,
         float: model.userData.float || 0,
@@ -300,6 +359,349 @@ export class World {
     this.resize();
   }
 
+
+  /* ============================================================
+     HUB — la place centrale
+     ============================================================ */
+  buildHub(playerState = {}) {
+    if (this.zoneRoot) {
+      this.scene.remove(this.zoneRoot);
+      this.zoneRoot = null;
+    }
+    this.breakables = [];
+    this.hitMeshes = [];
+    this.portals = [];
+    this.hubEgg = null;
+    this.target = null;
+    this.queued = false;
+    this.mode = 'hub';
+    if (this.targetRing) this.targetRing.visible = false;
+
+    const root = new THREE.Group();
+    this.zoneRoot = root;
+    this.scene.add(root);
+
+    // ambiance chaude de place publique
+    this.scene.background = new THREE.Color('#8ed0ff');
+    this.scene.fog = new THREE.Fog('#cfe9ff', 46, 130);
+    this.#paintSky('#d8f2ff', '#7ec8ff');
+    this.hemi.color.set('#dff1ff');
+    this.hemi.groundColor.set('#c9b07a');
+    this.sun.color.set('#fff3d0');
+    this.sun.intensity = 2.05;
+    this.fill.color.set('#9ec8ff');
+    this.plane.material.color.set('#77c25c');
+    this.pathRing.material.color.set('#e2d3a6');
+    this.fxColor = '#ffd24a';
+    this.particlesEnabled = true;
+
+    this.pointLights.forEach((l) => this.scene.remove(l));
+    this.pointLights = [];
+
+    // ---- sol pavé
+    const plaza = new THREE.Mesh(
+      new THREE.CylinderGeometry(13, 13.2, 0.22, 56),
+      new THREE.MeshStandardMaterial({ color: '#e8dcc0', roughness: 0.92 }),
+    );
+    plaza.position.y = 0.05;
+    plaza.receiveShadow = true;
+    root.add(plaza);
+
+    const tileA = new THREE.MeshStandardMaterial({ color: '#d9c8a2', roughness: 0.95 });
+    const tileB = new THREE.MeshStandardMaterial({ color: '#efe4cb', roughness: 0.95 });
+    for (let ring = 0; ring < 4; ring++) {
+      const r0 = 3.4 + ring * 2.4;
+      const count = 14 + ring * 6;
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2 + ring * 0.18;
+        const tile = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 1.15), (i + ring) % 2 ? tileA : tileB);
+        tile.position.set(Math.cos(a) * r0, 0.18, Math.sin(a) * r0);
+        tile.rotation.y = -a + Math.PI / 2;
+        tile.receiveShadow = true;
+        root.add(tile);
+      }
+    }
+
+    // liseré lumineux du bord
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(13, 0.16, 8, 64),
+      new THREE.MeshStandardMaterial({ color: '#ffd24a', emissive: '#ffb300', emissiveIntensity: 0.55, metalness: 0.6, roughness: 0.3 }),
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.2;
+    root.add(rim);
+
+    // allées colorées du centre vers chaque portail
+    ZONES.forEach((zone, i) => {
+      const a = (i / ZONES.length) * Math.PI * 2 + 0.26;
+      const lane = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.1, 8.4),
+        new THREE.MeshStandardMaterial({ color: zone.portal || '#3ddcff', emissive: zone.portal || '#3ddcff', emissiveIntensity: 0.22, roughness: 0.85 }),
+      );
+      lane.rotation.x = -Math.PI / 2;
+      lane.rotation.z = -a;
+      lane.position.set(Math.cos(a) * 7.8, 0.13, Math.sin(a) * 7.8);
+      lane.receiveShadow = true;
+      root.add(lane);
+    });
+
+    // ---- fontaine centrale
+    const fountain = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.7, 0.55, 24), new THREE.MeshStandardMaterial({ color: '#cfd8e3', roughness: 0.7 }));
+    base.position.y = 0.28;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    fountain.add(base);
+    const water = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.2, 0.3, 24),
+      new THREE.MeshStandardMaterial({ color: '#4cc9f0', emissive: '#1d8fbf', emissiveIntensity: 0.35, roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.92 }),
+    );
+    water.position.y = 0.5;
+    fountain.add(water);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 1.9, 12), new THREE.MeshStandardMaterial({ color: '#e3cf9f', roughness: 0.85 }));
+    pillar.position.y = 1.35;
+    pillar.castShadow = true;
+    fountain.add(pillar);
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.7, 0.32, 18), new THREE.MeshStandardMaterial({ color: '#e3cf9f', roughness: 0.85 }));
+    bowl.position.y = 2.3;
+    bowl.castShadow = true;
+    fountain.add(bowl);
+    const water2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.92, 0.92, 0.12, 18),
+      new THREE.MeshStandardMaterial({ color: '#7ce7ff', emissive: '#29b6d6', emissiveIntensity: 0.4, roughness: 0.12 }),
+    );
+    water2.position.y = 2.44;
+    fountain.add(water2);
+    const jet = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.14, 1.5, 8),
+      new THREE.MeshStandardMaterial({ color: '#bff4ff', emissive: '#7ce7ff', emissiveIntensity: 0.8, transparent: true, opacity: 0.8 }),
+    );
+    jet.position.y = 3.2;
+    fountain.add(jet);
+    this.fountainJet = jet;
+    const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ color: '#ffd24a', emissive: '#ffb300', emissiveIntensity: 0.9, metalness: 0.8, roughness: 0.2 }));
+    gem.position.y = 4.05;
+    fountain.add(gem);
+    this.fountainGem = gem;
+    root.add(fountain);
+
+    const fl = new THREE.PointLight('#7ce7ff', 12, 16, 2);
+    fl.position.set(0, 3, 0);
+    root.add(fl);
+    this.pointLights.push(fl);
+
+    // ---- machine à œufs
+    const machine = new THREE.Group();
+    const mBase = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.5, 18), new THREE.MeshStandardMaterial({ color: '#2b3f75', roughness: 0.6, metalness: 0.3 }));
+    mBase.position.y = 0.25;
+    mBase.castShadow = true;
+    machine.add(mBase);
+    const mBody = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.3, 1.5, 18), new THREE.MeshStandardMaterial({ color: '#1d2f5c', roughness: 0.55, metalness: 0.35 }));
+    mBody.position.y = 1.2;
+    mBody.castShadow = true;
+    machine.add(mBody);
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(1.05, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: '#8fe7ff', transparent: true, opacity: 0.34, roughness: 0.05, metalness: 0.1 }),
+    );
+    dome.position.y = 1.95;
+    machine.add(dome);
+    const eggMat = new THREE.MeshStandardMaterial({ color: '#8ef0a0', emissive: '#4ade80', emissiveIntensity: 0.35, roughness: 0.35 });
+    const egg = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 20), eggMat);
+    egg.scale.set(1, 1.3, 1);
+    egg.position.y = 2.25;
+    egg.castShadow = true;
+    machine.add(egg);
+    this.hubEgg = egg;
+    const haloRing = new THREE.Mesh(
+      new THREE.RingGeometry(1.35, 1.7, 28),
+      new THREE.MeshBasicMaterial({ color: '#3ddcff', transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+    );
+    haloRing.rotation.x = -Math.PI / 2;
+    haloRing.position.y = 0.05;
+    machine.add(haloRing);
+    machine.position.set(-5.6, 0, -3.2);
+    root.add(machine);
+    this.eggMachine = machine;
+
+    const machineHit = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.9, 1.9, 3.2, 10),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
+    );
+    machineHit.position.set(-5.6, 1.5, -3.2);
+    machineHit.userData.kind = 'machine';
+    root.add(machineHit);
+    this.hitMeshes.push(machineHit);
+
+    const machineSign = buildSign('ŒUFS', '#8ef0a0');
+    machineSign.position.set(-5.6, 0, -3.2);
+    machineSign.scale.setScalar(0.72);
+    root.add(machineSign);
+
+    // ---- portails des zones
+    const radius = 9.6;
+    ZONES.forEach((zone, i) => {
+      const a = (i / ZONES.length) * Math.PI * 2 + 0.26;
+      const x = Math.cos(a) * radius;
+      const z = Math.sin(a) * radius;
+      const portal = new THREE.Group();
+      portal.position.set(x, 0, z);
+      portal.rotation.y = -a + Math.PI / 2;
+
+      const color = zone.portal || '#3ddcff';
+      const stone = new THREE.MeshStandardMaterial({ color: zone.id === 1 ? '#8fbf6a' : '#6d7f9c', roughness: 0.85 });
+      const glow = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 1.1,
+        transparent: true,
+        opacity: 0.55,
+        roughness: 0.2,
+      });
+
+      for (const sx of [-1, 1]) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.6, 0.55), stone);
+        pillar.position.set(sx * 1.35, 1.8, 0);
+        pillar.castShadow = true;
+        pillar.receiveShadow = true;
+        portal.add(pillar);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.8), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.7, roughness: 0.4 }));
+        cap.position.set(sx * 1.35, 3.75, 0);
+        portal.add(cap);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.5, 0.6), stone);
+      beam.position.y = 3.95;
+      beam.castShadow = true;
+      portal.add(beam);
+
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 3.3), glow);
+      sheet.position.y = 1.85;
+      portal.add(sheet);
+
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.12, 8, 24, Math.PI), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, roughness: 0.3 }));
+      arch.position.y = 3.1;
+      portal.add(arch);
+
+      const light = new THREE.PointLight(color, 8, 9, 2);
+      light.position.set(0, 2, 0);
+      portal.add(light);
+
+      const sign = buildSign(zone.name.toUpperCase(), color);
+      sign.position.set(0, 0, 0.1);
+      sign.scale.setScalar(0.62);
+      sign.position.y = 1.25;
+      portal.add(sign);
+
+      // zone 1 toujours accessible, les autres indiquent le prix
+      const unlocked = (playerState.unlockedZones || [1]).includes(zone.id);
+      if (!unlocked) {
+        const lock = new THREE.Mesh(
+          new THREE.TorusGeometry(0.45, 0.12, 8, 18),
+          new THREE.MeshStandardMaterial({ color: '#94a3b8', metalness: 0.7, roughness: 0.3 }),
+        );
+        lock.position.set(0, 4.7, 0);
+        portal.add(lock);
+        const lockBody = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.24), new THREE.MeshStandardMaterial({ color: '#64748b', metalness: 0.6, roughness: 0.35 }));
+        lockBody.position.set(0, 4.15, 0);
+        portal.add(lockBody);
+      }
+
+      const hit = new THREE.Mesh(
+        new THREE.BoxGeometry(3.2, 4.4, 1.2),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
+      );
+      hit.position.y = 2.0;
+      hit.userData.kind = 'portal';
+      hit.userData.zone = zone.id;
+      portal.add(hit);
+      this.hitMeshes.push(hit);
+
+      root.add(portal);
+      this.portals.push({ zone, group: portal, sheet, color, unlocked });
+    });
+
+    // ---- décor autour de la place
+    const rand = mulberry(99);
+    for (let i = 0; i < 26; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = 14.5 + rand() * 14;
+      const kind = i % 4;
+      let obj;
+      if (kind === 0) obj = buildTree('leaf');
+      else if (kind === 1) obj = buildFlower();
+      else if (kind === 2) obj = buildRock(0.7 + rand() * 0.5, '#9aa5b4');
+      else obj = buildTree('pine');
+      obj.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      obj.scale.setScalar(0.9 + rand() * 0.7);
+      obj.rotation.y = rand() * 6.28;
+      root.add(obj);
+    }
+
+    // bancs
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.5;
+      const bench = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.18, 0.8), new THREE.MeshStandardMaterial({ color: '#b07a45', roughness: 0.9 }));
+      seat.position.y = 0.6;
+      seat.castShadow = true;
+      bench.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.6, 0.14), new THREE.MeshStandardMaterial({ color: '#b07a45', roughness: 0.9 }));
+      back.position.set(0, 0.95, -0.34);
+      bench.add(back);
+      for (const sx of [-0.9, 0.9]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: '#5b6675', metalness: 0.5, roughness: 0.5 }));
+        leg.position.set(sx, 0.3, 0);
+        bench.add(leg);
+      }
+      bench.position.set(Math.cos(a) * 6.4, 0, Math.sin(a) * 6.4);
+      bench.rotation.y = -a + Math.PI / 2;
+      root.add(bench);
+    }
+
+    // guirlandes lumineuses
+    this.bulbs = [];
+    const bulbColors = ['#ffd24a', '#ff7ab8', '#3ddcff', '#a78bfa', '#4ade80'];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.11, 8, 6),
+        new THREE.MeshStandardMaterial({ color: bulbColors[i % bulbColors.length], emissive: bulbColors[i % bulbColors.length], emissiveIntensity: 1.2 }),
+      );
+      bulb.position.set(Math.cos(a) * 13.2, 3.3 + Math.sin(i * 0.9) * 0.28, Math.sin(a) * 13.2);
+      root.add(bulb);
+      this.bulbs.push(bulb);
+    }
+
+    // enseigne du hub
+    const hubSign = buildSign('PET BLOCS 99', '#ffd24a', '#101a33');
+    hubSign.position.set(0, 0, -11.6);
+    hubSign.scale.setScalar(1.15);
+    root.add(hubSign);
+
+    // nuages + étoiles discrètes
+    this.clouds = [];
+    for (let i = 0; i < 7; i++) {
+      const cloud = new THREE.Group();
+      const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, emissive: '#e8f4ff', emissiveIntensity: 0.35 });
+      for (let k = 0; k < 3; k++) {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(2.6 + rand() * 2.4, 1.0 + rand() * 0.6, 2 + rand() * 2), m);
+        box.position.set((rand() - 0.5) * 4.5, (rand() - 0.5) * 1.2, (rand() - 0.5) * 3);
+        cloud.add(box);
+      }
+      cloud.position.set((rand() - 0.5) * 60, 16 + rand() * 9, (rand() - 0.5) * 60);
+      cloud.userData.speed = 0.4 + rand() * 0.6;
+      this.clouds.push(cloud);
+      root.add(cloud);
+    }
+
+    this.player.position.set(0, 0, 6.4);
+    this.player.rotation.y = Math.PI;
+    this.camTargetYaw = 0;
+    this.camYaw = 0;
+    this.camPitch = 0.5;
+    this.camDist = 22;
+  }
+
   buildZone(zone, layout, { keepPets = true } = {}) {
     if (this.zoneRoot) {
       this.scene.remove(this.zoneRoot);
@@ -307,6 +709,8 @@ export class World {
     }
     this.breakables = [];
     this.hitMeshes = [];
+    this.portals = [];
+    this.mode = 'zone';
     this.target = null;
     this.queued = false;
     if (this.targetRing) this.targetRing.visible = false;
@@ -315,6 +719,8 @@ export class World {
     this.sky = sky;
     this.scene.background = new THREE.Color(sky.bg);
     this.scene.fog = new THREE.Fog(sky.fog, zone.id >= 5 ? 30 : 38, zone.id >= 5 ? 78 : 92);
+    const skyTop = zone.id === 4 ? '#2a1430' : zone.id === 5 ? '#05030f' : zone.id === 6 ? '#020a14' : sky.bg;
+    this.#paintSky(sky.fog, skyTop);
     this.hemi.color.set(sky.hemi);
     this.hemi.groundColor.set(sky.ground);
     this.sun.color.set(sky.sun);
@@ -559,6 +965,11 @@ export class World {
     this.#buildPets(defs);
   }
 
+  /** Reconstruit les pets équipés depuis l'état du jeu. */
+  applyPets(list) {
+    this.#buildPets(list);
+  }
+
   /* ---------------- interactions ---------------- */
 
   setPointerFromEvent(clientX, clientY) {
@@ -567,24 +978,30 @@ export class World {
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   }
 
+  /** Renvoie { kind: 'breakable'|'portal'|'machine', ... } ou null. */
   pickAt(clientX, clientY) {
     this.setPointerFromEvent(clientX, clientY);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits = this.raycaster.intersectObjects(this.hitMeshes, false);
     for (const h of hits) {
-      const idx = h.object.userData.breakableIndex;
-      const b = this.breakables[idx];
-      if (b && b.alive) return b;
+      const ud = h.object.userData || {};
+      if (ud.kind === 'portal') return { kind: 'portal', zone: ud.zone, object: h.object };
+      if (ud.kind === 'machine') return { kind: 'machine', object: h.object };
+      const b = this.breakables[ud.breakableIndex];
+      if (b && b.alive) return { kind: 'breakable', breakable: b, object: h.object };
     }
     return null;
   }
 
   hoverAt(clientX, clientY) {
-    const b = this.pickAt(clientX, clientY);
-    if (b) {
+    const hit = this.pickAt(clientX, clientY);
+    if (hit && hit.kind === 'breakable') {
       this.targetRing.visible = true;
-      this.targetRing.position.set(b.basePos.x, 0.05, b.basePos.z);
-      this.targetRing.scale.setScalar(b.scale);
+      this.targetRing.position.set(hit.breakable.basePos.x, 0.05, hit.breakable.basePos.z);
+      this.targetRing.scale.setScalar(hit.breakable.scale);
+      this.canvas.style.cursor = 'pointer';
+    } else if (hit) {
+      this.targetRing.visible = false;
       this.canvas.style.cursor = 'pointer';
     } else {
       this.targetRing.visible = false;
@@ -593,8 +1010,17 @@ export class World {
   }
 
   clickAt(clientX, clientY) {
-    const b = this.pickAt(clientX, clientY);
-    if (!b) return;
+    const hit = this.pickAt(clientX, clientY);
+    if (!hit) return;
+    if (hit.kind === 'portal') {
+      this.cb.onPortal?.(hit.zone);
+      return;
+    }
+    if (hit.kind === 'machine') {
+      this.cb.onEggMachine?.();
+      return;
+    }
+    const b = hit.breakable;
     this.selectTarget(b);
     this.queued = true;
     // un clic joueur tape tout de suite, même si l'animation précédente tourne encore
@@ -753,6 +1179,37 @@ export class World {
     }
     if (this.stars) this.stars.rotation.y += dt * 0.02;
 
+    // animations du hub
+    if (this.mode === 'hub') {
+      if (this.hubEgg) {
+        this.hubEgg.rotation.y += dt * 0.9;
+        this.hubEgg.position.y = 2.25 + Math.sin(this.time * 1.8) * 0.09;
+      }
+      if (this.fountainGem) {
+        this.fountainGem.rotation.y += dt * 1.4;
+        this.fountainGem.rotation.x += dt * 0.6;
+        this.fountainGem.position.y = 4.05 + Math.sin(this.time * 2.2) * 0.12;
+      }
+      if (this.fountainJet) {
+        this.fountainJet.scale.y = 1 + Math.sin(this.time * 5) * 0.12;
+      }
+      for (let i = 0; i < this.portals.length; i++) {
+        const p = this.portals[i];
+        const pulse = 0.42 + Math.sin(this.time * 2 + i) * 0.16;
+        p.sheet.material.opacity = pulse;
+        p.group.position.y = Math.sin(this.time * 1.2 + i * 0.8) * 0.06;
+      }
+      if (this.bulbs) {
+        for (let i = 0; i < this.bulbs.length; i++) {
+          const b = this.bulbs[i];
+          b.material.emissiveIntensity = 0.9 + Math.sin(this.time * 3 + i * 0.5) * 0.5;
+        }
+      }
+      if (Math.random() < dt * 4 && this.fountainJet) {
+        this.#burst(0, 3.4, 0, 1, '#bff4ff', 0.5);
+      }
+    }
+
     // anneau joueur
     this.playerRing.position.set(this.player.position.x, 0.03, this.player.position.z);
     this.playerRing.rotation.z += dt * 0.8;
@@ -871,6 +1328,23 @@ export class World {
       m.rotation.y = lerpAngle(m.rotation.y, rot, Math.min(1, dt * 4));
       // petit dandinement
       m.rotation.z = Math.sin(t * 2.4 + pet.hop) * 0.06;
+
+      if (pet.halo) {
+        pet.halo.position.set(m.position.x, 0.03, m.position.z);
+        pet.halo.rotation.z += dt * (pet.mutation === 'prismatique' ? 2 : 0.8);
+        const pulse = 1 + Math.sin(t * 3 + pet.hop) * 0.08;
+        pet.halo.scale.setScalar(pulse);
+      }
+      if (pet.mutation === 'arcenciel' && pet.animatedMats.length) {
+        const hue = (t * 0.13 + i * 0.08) % 1;
+        for (const mat of pet.animatedMats) {
+          mat.emissive.setHSL(hue, 0.9, 0.42);
+          mat.color.setHSL((hue + 0.5) % 1, 0.8, 0.6);
+        }
+      }
+      if (pet.mutation !== 'normal' && Math.random() < dt * 6) {
+        this.#burst(m.position.x, 0.7, m.position.z, 1, MUTATIONS[pet.mutation].color, 0.35);
+      }
 
       if (m.userData.wings) {
         const flap = Math.sin(t * 9 + pet.hop) * 0.35;

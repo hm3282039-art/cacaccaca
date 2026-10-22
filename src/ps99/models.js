@@ -139,10 +139,151 @@ export function buildAvatar(palette = AVATAR_PALETTES[0]) {
   return group;
 }
 
+
+/* ============================================================
+   Quadrupède paramétrique — base commune à beaucoup de pets
+   ============================================================ */
+function quadBase(def, opts = {}) {
+  const c = def.colors || {};
+  const main = c.main || '#cccccc';
+  const belly = c.belly || '#ffffff';
+  const accent = c.accent || '#444444';
+
+  const bodyW = opts.bodyW ?? 0.66;
+  const bodyH = opts.bodyH ?? 0.52;
+  const bodyL = 0.92;
+  const g = new THREE.Group();
+
+  add(g, bx(bodyW, bodyH, bodyL, main), 0, 0.42 + bodyH / 2 - 0.1, 0);
+  add(g, bx(bodyW * 0.76, bodyH * 0.72, bodyL * 0.7, belly), 0, 0.42 + bodyH / 2 - 0.08, 0.16);
+
+  const headY = 0.42 + bodyH + 0.22;
+  add(g, bx(0.6, 0.56, 0.56, main), 0, headY, 0.36);
+
+  // museau
+  const snout = opts.snout ?? 'round';
+  if (snout === 'pig') {
+    add(g, bx(0.34, 0.26, 0.18, accent), 0, headY - 0.08, 0.68);
+    add(g, bx(0.06, 0.08, 0.04, '#141420', { noShadow: true }), -0.07, headY - 0.08, 0.78);
+    add(g, bx(0.06, 0.08, 0.04, '#141420', { noShadow: true }), 0.07, headY - 0.08, 0.78);
+  } else if (snout !== 'none') {
+    add(g, bx(0.36, 0.24, 0.16, belly), 0, headY - 0.1, 0.66);
+    add(g, bx(0.12, 0.08, 0.06, accent), 0, headY - 0.02, 0.75);
+  }
+
+  // yeux
+  add(g, bx(0.1, 0.13, 0.05, '#141420', { noShadow: true }), -0.16, headY + 0.1, 0.64);
+  add(g, bx(0.1, 0.13, 0.05, '#141420', { noShadow: true }), 0.16, headY + 0.1, 0.64);
+  add(g, bx(0.04, 0.05, 0.02, '#ffffff', { noShadow: true }), -0.14, headY + 0.13, 0.67);
+  add(g, bx(0.04, 0.05, 0.02, '#ffffff', { noShadow: true }), 0.18, headY + 0.13, 0.67);
+
+  // oreilles
+  const ears = opts.ears ?? 'round';
+  if (ears === 'side') {
+    add(g, bx(0.2, 0.2, 0.1, main), -0.32, headY + 0.12, 0.36);
+    add(g, bx(0.2, 0.2, 0.1, main), 0.32, headY + 0.12, 0.36);
+    add(g, bx(0.12, 0.12, 0.04, accent), -0.32, headY + 0.12, 0.42);
+    add(g, bx(0.12, 0.12, 0.04, accent), 0.32, headY + 0.12, 0.42);
+  } else if (ears !== 'none') {
+    add(g, bx(0.2, 0.2, 0.1, main), -0.22, headY + 0.32, 0.32);
+    add(g, bx(0.2, 0.2, 0.1, main), 0.22, headY + 0.32, 0.32);
+  }
+
+  // queue courte
+  if (opts.tail !== 'none') {
+    const t = bx(0.14, 0.14, 0.42, main);
+    t.position.set(0, 0.72, -0.62);
+    t.rotation.x = -0.7;
+    g.add(t);
+  }
+
+  // pattes
+  const pawY = 0.16;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      add(g, bx(0.2, 0.32, 0.24, main), sx * 0.24, pawY, sz * 0.3);
+    }
+  }
+
+  g.userData.headY = headY;
+  return g;
+}
+
+/* ============================================================
+   Enseigne lisible (texture canvas, avec repli sans canvas)
+   ============================================================ */
+export function buildSign(text, color = '#ffd24a', bg = '#101a33') {
+  const g = new THREE.Group();
+  const w = 4.4;
+  const h = 1.15;
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, 0.18),
+    new THREE.MeshStandardMaterial({ color: bg, roughness: 0.6, metalness: 0.15 }),
+  );
+  panel.position.y = h / 2 + 1.9;
+  panel.castShadow = true;
+  g.add(panel);
+
+  let texture = null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 134;
+    const ctx = canvas.getContext && canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 62px Trebuchet MS, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 4);
+      texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+    }
+  } catch { texture = null; }
+
+  if (texture) {
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(w - 0.16, h - 0.16),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: false }),
+    );
+    face.position.set(0, panel.position.y, 0.1);
+    g.add(face);
+    const back = face.clone();
+    back.position.z = -0.1;
+    back.rotation.y = Math.PI;
+    g.add(back);
+  } else {
+    // repli : simple bandeau coloré
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(w - 0.5, h * 0.42, 0.04),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(color), emissive: new THREE.Color(color), emissiveIntensity: 0.6 }),
+    );
+    stripe.position.set(0, panel.position.y, 0.1);
+    g.add(stripe);
+  }
+
+  // poteaux
+  for (const sx of [-1, 1]) {
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 1.95, 0.16),
+      new THREE.MeshStandardMaterial({ color: '#6b4a2a', roughness: 0.9 }),
+    );
+    post.position.set(sx * (w / 2 - 0.24), 0.97, 0);
+    post.castShadow = true;
+    g.add(post);
+  }
+  return g;
+}
+
 /* ============================================================
    PETS — un constructeur générique + quelques familles spéciales
    ============================================================ */
-export function buildPet(def) {
+export function buildPet(def, mutation = 'normal') {
   const c = def.colors || {};
   const main = c.main || '#cccccc';
   const belly = c.belly || '#ffffff';
@@ -156,6 +297,35 @@ export function buildPet(def) {
   };
 
   const finish = (g) => {
+    if (mutation && mutation !== 'normal') {
+      const M = {
+        dore: { color: new THREE.Color('#ffd24a'), emissive: new THREE.Color('#e0a800'), e: 0.42, metal: 0.85, rough: 0.22 },
+        arcenciel: { color: new THREE.Color('#ff7ab8'), emissive: new THREE.Color('#a855f7'), e: 0.5, metal: 0.3, rough: 0.3 },
+        prismatique: { color: new THREE.Color('#c9f7ff'), emissive: new THREE.Color('#ffffff'), e: 0.6, metal: 0.95, rough: 0.12 },
+      }[mutation];
+      if (M) {
+        let i = 0;
+        g.traverse((o) => {
+          if (!o.isMesh || !o.material || !o.material.color) return;
+          if (o.userData && o.userData.noShadow) return; // on garde les yeux sombres
+          o.material = o.material.clone();
+          if (mutation === 'arcenciel') {
+            const hue = (i * 0.11) % 1;
+            o.material.color.setHSL(hue, 0.85, 0.62);
+            o.material.emissive = new THREE.Color().setHSL(hue, 0.9, 0.4);
+          } else {
+            o.material.color.lerp(M.color, 0.72);
+            o.material.emissive = M.emissive.clone();
+          }
+          o.material.emissiveIntensity = M.e;
+          o.material.metalness = M.metal;
+          o.material.roughness = M.rough;
+          o.userData.mutated = true;
+          i++;
+        });
+      }
+      g.userData.mutation = mutation;
+    }
     if (shiny) {
       g.traverse((o) => {
         if (o.isMesh && o.material && o.material.color && !o.userData.keep) {
@@ -425,6 +595,290 @@ export function buildPet(def) {
       add(g, bx(0.3, 0.7, 0.34, main), 0.66, 1.0, 0);
       add(g, bx(0.3, 0.6, 0.34, main), -0.28, 0.3, 0);
       add(g, bx(0.3, 0.6, 0.34, main), 0.28, 0.3, 0);
+      return finish(g);
+    }
+
+
+    case 'pig': {
+      const g = quadBase(def, { bodyH: 0.5, snout: 'pig' });
+      add(g, bx(0.18, 0.18, 0.18, accent), 0, 1.02, -0.62);
+      const tail = bx(0.12, 0.12, 0.2, accent);
+      tail.position.set(0, 1.05, -0.66);
+      tail.rotation.x = 0.6;
+      g.add(tail);
+      return finish(g);
+    }
+
+    case 'chick': {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(sphereGeo(0.42, 14), mat(main));
+      body.scale.set(1, 1.05, 1);
+      body.position.y = 0.6;
+      body.castShadow = true;
+      g.add(body);
+      add(g, bx(0.3, 0.3, 0.3, main), 0, 1.06, 0.06);
+      add(g, bx(0.16, 0.1, 0.16, accent), 0, 1.0, 0.26);
+      eye(g, -0.12, 1.12, 0.18, 0.8);
+      eye(g, 0.12, 1.12, 0.18, 0.8);
+      const tuft = new THREE.Mesh(coneGeo(0.1, 0.24, 5), mat(accent));
+      tuft.position.set(0, 1.32, 0);
+      g.add(tuft);
+      const wingL = bx(0.1, 0.3, 0.22, accent);
+      wingL.position.set(-0.42, 0.62, 0);
+      wingL.rotation.z = 0.25;
+      g.add(wingL);
+      const wingR = wingL.clone();
+      wingR.position.x = 0.42;
+      wingR.rotation.z = -0.25;
+      g.add(wingR);
+      add(g, bx(0.1, 0.2, 0.1, accent), -0.16, 0.12, 0.1);
+      add(g, bx(0.1, 0.2, 0.1, accent), 0.16, 0.12, 0.1);
+      g.userData.float = 0.05;
+      return finish(g);
+    }
+
+    case 'raccoon': {
+      const g = quadBase(def, { bodyH: 0.5, snout: 'round' });
+      add(g, bx(0.44, 0.12, 0.06, accent), 0, 1.16, 0.66);
+      for (let i = 0; i < 3; i++) {
+        add(g, bx(0.2, 0.2, 0.1, accent), 0, 0.78, -0.62 - i * 0.17);
+      }
+      return finish(g);
+    }
+
+    case 'turtle': {
+      const g = new THREE.Group();
+      const shell = new THREE.Mesh(sphereGeo(0.58, 14), mat(main));
+      shell.scale.set(1, 0.62, 1.15);
+      shell.position.y = 0.55;
+      shell.castShadow = true;
+      g.add(shell);
+      add(g, bx(0.7, 0.16, 0.86, belly), 0, 0.26, 0);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.78;
+        add(g, bx(0.2, 0.2, 0.3, main), Math.cos(a) * 0.5, 0.2, Math.sin(a) * 0.6);
+      }
+      add(g, bx(0.38, 0.34, 0.4, main), 0, 0.48, 0.62);
+      add(g, bx(0.3, 0.1, 0.06, accent, { noShadow: true }), 0, 0.42, 0.82);
+      eye(g, -0.11, 0.56, 0.81, 0.75);
+      eye(g, 0.11, 0.56, 0.81, 0.75);
+      // écailles du dos
+      for (let i = 0; i < 4; i++) {
+        const sc = bx(0.22, 0.1, 0.22, accent);
+        sc.position.set(Math.cos(i * 1.6) * 0.24, 0.86, Math.sin(i * 1.6) * 0.3);
+        g.add(sc);
+      }
+      return finish(g);
+    }
+
+    case 'owl': {
+      const g = new THREE.Group();
+      add(g, bx(0.72, 0.8, 0.62, main), 0, 0.66, 0);
+      add(g, bx(0.5, 0.5, 0.66, belly), 0, 0.6, 0.02);
+      add(g, bx(0.74, 0.6, 0.6, main), 0, 1.3, 0);
+      // grands yeux
+      for (const sx of [-1, 1]) {
+        add(g, bx(0.26, 0.26, 0.06, '#ffffff', { noShadow: true }), sx * 0.19, 1.34, 0.31);
+        add(g, bx(0.13, 0.13, 0.05, '#141420', { noShadow: true }), sx * 0.19, 1.34, 0.34);
+      }
+      add(g, bx(0.14, 0.14, 0.12, accent), 0, 1.2, 0.34);
+      // aigrettes
+      const t1 = new THREE.Mesh(coneGeo(0.1, 0.26, 4), mat(accent));
+      t1.position.set(-0.26, 1.7, 0.02);
+      g.add(t1);
+      const t2 = t1.clone();
+      t2.position.x = 0.26;
+      g.add(t2);
+      const wl = bx(0.14, 0.5, 0.4, accent);
+      wl.position.set(-0.42, 0.72, 0);
+      wl.rotation.z = 0.2;
+      g.add(wl);
+      const wr = wl.clone();
+      wr.position.x = 0.42;
+      wr.rotation.z = -0.2;
+      g.add(wr);
+      add(g, bx(0.16, 0.24, 0.16, accent), -0.2, 0.12, 0.1);
+      add(g, bx(0.16, 0.24, 0.16, accent), 0.2, 0.12, 0.1);
+      g.userData.wings = [wl, wr];
+      return finish(g);
+    }
+
+    case 'monkey': {
+      const g = quadBase(def, { bodyH: 0.5, snout: 'round', ears: 'side' });
+      // visage clair
+      add(g, bx(0.4, 0.34, 0.06, belly), 0, 1.16, 0.66);
+      // longue queue en spirale
+      for (let i = 0; i < 5; i++) {
+        const seg = bx(0.12, 0.12, 0.2, main);
+        seg.position.set(Math.sin(i * 0.7) * 0.25, 1.1 + i * 0.12, -0.62 - i * 0.1);
+        seg.rotation.x = -0.4 - i * 0.15;
+        g.add(seg);
+      }
+      return finish(g);
+    }
+
+    case 'tiger': {
+      const g = quadBase(def, { bodyH: 0.54, snout: 'round' });
+      for (let i = 0; i < 6; i++) {
+        add(g, bx(0.1, 0.34, 0.08, accent, { noShadow: true }), -0.3 + (i % 2) * 0.6, 1.0, -0.34 + Math.floor(i / 2) * 0.32);
+      }
+      add(g, bx(0.5, 0.1, 0.56, accent, { noShadow: true }), 0, 1.42, 0.36);
+      return finish(g);
+    }
+
+    case 'deer': {
+      const g = quadBase(def, { bodyH: 0.5, snout: 'round', ears: 'side' });
+      for (const sx of [-1, 1]) {
+        add(g, bx(0.07, 0.45, 0.07, accent), sx * 0.18, 1.72, 0.38);
+        add(g, bx(0.22, 0.07, 0.07, accent), sx * 0.28, 1.86, 0.38);
+        add(g, bx(0.07, 0.2, 0.07, accent), sx * 0.34, 1.96, 0.38);
+      }
+      for (let i = 0; i < 3; i++) {
+        add(g, bx(0.16, 0.06, 0.16, belly), 0, 1.2 + i * 0.16, 0.62 - i * 0.04);
+      }
+      return finish(g);
+    }
+
+    case 'axolotl': {
+      const g = new THREE.Group();
+      add(g, bx(0.62, 0.42, 1.0, main), 0, 0.42, 0);
+      add(g, bx(0.44, 0.3, 0.7, belly), 0, 0.34, 0.12);
+      add(g, bx(0.66, 0.52, 0.52, main), 0, 0.66, 0.52);
+      add(g, bx(0.4, 0.06, 0.06, accent, { noShadow: true }), 0, 0.54, 0.78);
+      eye(g, -0.17, 0.76, 0.78, 0.8);
+      eye(g, 0.17, 0.76, 0.78, 0.8);
+      // branchies
+      for (const sx of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const br = bx(0.08, 0.3, 0.08, accent);
+          br.position.set(sx * 0.42, 0.74 + (i - 1) * 0.14, 0.44);
+          br.rotation.z = sx * (0.4 + i * 0.2);
+          g.add(br);
+        }
+      }
+      add(g, bx(0.14, 0.2, 0.24, main), -0.26, 0.14, 0.32);
+      add(g, bx(0.14, 0.2, 0.24, main), 0.26, 0.14, 0.32);
+      add(g, bx(0.14, 0.2, 0.24, main), -0.26, 0.14, -0.34);
+      add(g, bx(0.14, 0.2, 0.24, main), 0.26, 0.14, -0.34);
+      const tail = bx(0.4, 0.08, 0.4, main);
+      tail.position.set(0, 0.46, -0.6);
+      g.add(tail);
+      return finish(g);
+    }
+
+    case 'unicorn': {
+      const g = quadBase(def, { bodyH: 0.52, snout: 'round' });
+      const horn = new THREE.Mesh(coneGeo(0.09, 0.42, 6), mat('#ffd24a', { emissive: '#ffd24a', emissiveIntensity: 0.55, metalness: 0.6 }));
+      horn.position.set(0, 1.76, 0.46);
+      g.add(horn);
+      for (let i = 0; i < 4; i++) {
+        add(g, bx(0.12, 0.18, 0.12, ['#ff7ab8', '#7cf2ff', '#ffd24a', '#a78bfa'][i]), 0, 1.56 - i * 0.06, 0.3 - i * 0.16);
+      }
+      return finish(g);
+    }
+
+    case 'elephant': {
+      const g = quadBase(def, { bodyH: 0.62, bodyW: 0.8, snout: 'none' });
+      // trompe
+      for (let i = 0; i < 4; i++) {
+        const seg = bx(0.18, 0.18, 0.2, main);
+        seg.position.set(0, 1.06 - i * 0.16, 0.66 + i * 0.1);
+        seg.rotation.x = i * 0.2;
+        g.add(seg);
+      }
+      // grandes oreilles
+      for (const sx of [-1, 1]) {
+        const ear = bx(0.1, 0.62, 0.52, accent);
+        ear.position.set(sx * 0.42, 1.32, 0.3);
+        ear.rotation.z = sx * 0.2;
+        g.add(ear);
+      }
+      // défenses
+      add(g, bx(0.06, 0.24, 0.06, '#f5f5f0'), -0.14, 1.0, 0.78);
+      add(g, bx(0.06, 0.24, 0.06, '#f5f5f0'), 0.14, 1.0, 0.78);
+      return finish(g);
+    }
+
+    case 'ghost': {
+      const g = new THREE.Group();
+      const bodyMat = mat(main, { roughness: 0.35, emissive: main, emissiveIntensity: 0.4 });
+      const body = new THREE.Mesh(sphereGeo(0.48, 16), bodyMat);
+      body.scale.set(1, 1.25, 1);
+      body.position.y = 0.85;
+      g.add(body);
+      // bas ondulé
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const lobe = new THREE.Mesh(sphereGeo(0.16, 8), bodyMat);
+        lobe.position.set(Math.cos(a) * 0.32, 0.36, Math.sin(a) * 0.32);
+        g.add(lobe);
+      }
+      eye(g, -0.17, 0.98, 0.42, 1.1);
+      eye(g, 0.17, 0.98, 0.42, 1.1);
+      add(g, bx(0.16, 0.1, 0.06, '#141420', { noShadow: true }), 0, 0.76, 0.44);
+      g.userData.float = 0.5;
+      g.userData.wobble = true;
+      return finish(g);
+    }
+
+    case 'hydra': {
+      const g = new THREE.Group();
+      add(g, bx(0.8, 0.62, 1.1, main), 0, 0.7, 0);
+      add(g, bx(0.55, 0.4, 0.8, belly), 0, 0.5, 0.1);
+      // trois têtes sur des cous
+      for (let i = -1; i <= 1; i++) {
+        const neck = bx(0.2, 0.62, 0.2, main);
+        neck.position.set(i * 0.3, 1.2, 0.34);
+        neck.rotation.z = i * 0.22;
+        g.add(neck);
+        const head = bx(0.36, 0.32, 0.44, main);
+        head.position.set(i * 0.42, 1.56, 0.42);
+        head.rotation.y = i * 0.2;
+        g.add(head);
+        add(g, head, bx(0.2, 0.12, 0.16, belly), 0, -0.06, 0.26);
+        add(g, head, bx(0.1, 0.1, 0.05, '#141420', { noShadow: true }), -0.1, 0.08, 0.23);
+        add(g, head, bx(0.1, 0.1, 0.05, '#141420', { noShadow: true }), 0.1, 0.08, 0.23);
+        const h1 = new THREE.Mesh(coneGeo(0.06, 0.2, 4), mat(accent));
+        h1.position.set(i * 0.42 - 0.1, 1.78, 0.36);
+        g.add(h1);
+        const h2 = h1.clone();
+        h2.position.x = i * 0.42 + 0.1;
+        g.add(h2);
+      }
+      for (let i = 0; i < 3; i++) {
+        const spike = new THREE.Mesh(coneGeo(0.1, 0.26, 4), mat(accent));
+        spike.position.set(0, 1.1, -0.1 - i * 0.2);
+        g.add(spike);
+      }
+      add(g, bx(0.2, 0.2, 0.9, main), 0, 0.62, -0.8);
+      return finish(g);
+    }
+
+    case 'mecha': {
+      const g = new THREE.Group();
+      const plate = (w, h, d, x, y, z, col = main) => add(g, bx(w, h, d, col), x, y, z);
+      plate(0.86, 0.8, 0.66, 0, 0.95, 0);
+      plate(0.5, 0.36, 0.68, 0, 1.0, 0.04, belly);
+      plate(0.14, 0.14, 0.06, 0, 1.0, 0.36, accent);
+      plate(0.72, 0.6, 0.62, 0, 1.66, 0);
+      plate(0.52, 0.24, 0.06, 0, 1.7, 0.33, '#0b1020');
+      add(g, bx(0.12, 0.08, 0.02, accent, { emissive: accent, emissiveIntensity: 1.6, noShadow: true }), -0.15, 1.7, 0.37);
+      add(g, bx(0.12, 0.08, 0.02, accent, { emissive: accent, emissiveIntensity: 1.6, noShadow: true }), 0.15, 1.7, 0.37);
+      // épaulettes + bras
+      plate(0.3, 0.28, 0.34, -0.58, 1.3, 0, accent);
+      plate(0.3, 0.28, 0.34, 0.58, 1.3, 0, accent);
+      plate(0.24, 0.52, 0.28, -0.58, 0.92, 0);
+      plate(0.24, 0.52, 0.28, 0.58, 0.92, 0);
+      plate(0.3, 0.3, 0.3, -0.6, 0.6, 0.02, accent);
+      plate(0.3, 0.3, 0.3, 0.6, 0.6, 0.02, accent);
+      plate(0.3, 0.56, 0.36, -0.24, 0.3, 0);
+      plate(0.3, 0.56, 0.36, 0.24, 0.3, 0);
+      // antenne + réacteur
+      plate(0.1, 0.34, 0.1, 0, 2.1, 0);
+      const orb = new THREE.Mesh(sphereGeo(0.12, 10), mat(accent, { emissive: accent, emissiveIntensity: 1.8 }));
+      orb.position.set(0, 2.32, 0);
+      g.add(orb);
+      plate(0.5, 0.16, 0.2, 0, 1.0, -0.44, accent);
       return finish(g);
     }
 

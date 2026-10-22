@@ -10,6 +10,7 @@
   <body>
     <div id="app">
       <canvas id="scene"></canvas>
+      <div id="vignette"></div>
       <div id="damage-layer"></div>
 
       <header id="hud-top">
@@ -19,8 +20,12 @@
           <div class="pill diamonds"><span class="ico">✨</span><span id="stat-diamonds">0</span></div>
         </div>
         <nav class="top-actions">
+          <button class="tool-btn hub hidden" id="btn-hub"><span class="ticon">🏛️</span><span class="tlabel">Place</span></button>
           <button class="tool-btn" id="btn-shop"><span class="ticon">🛒</span><span class="tlabel">Boutique</span></button>
-          <button class="tool-btn" id="btn-pets"><span class="ticon">🐾</span><span class="tlabel">Pets</span></button>
+          <button class="tool-btn" id="btn-pets">
+            <span class="ticon">🐾<span class="pets-badge hidden" id="pets-badge">0</span></span>
+            <span class="tlabel">Pets</span>
+          </button>
           <button class="tool-btn" id="btn-upgrades"><span class="ticon">⚡</span><span class="tlabel">Améliorer</span></button>
           <button class="tool-btn" id="btn-rebirth"><span class="ticon">🔄</span><span class="tlabel">Renaissance</span></button>
           <button class="tool-btn small" id="btn-settings"><span class="ticon">⚙️</span></button>
@@ -46,6 +51,7 @@
       <div id="hint-bar">
         <span id="hint-text">Clique sur les pièces pour les casser</span>
         <span class="hint-dps">DPS : <b id="hint-dps-value">0</b></span>
+        <button class="hint-hub" id="btn-hub-2">🏛️ Place</button>
       </div>
 
       <div id="toasts"></div>
@@ -110,6 +116,7 @@
       <!-- ============ HATCH OVERLAY ============ -->
       <div id="hatch-overlay" class="hidden">
         <div class="hatch-stage">
+          <div class="hatch-rays"></div>
           <div class="hatch-egg" id="hatch-egg">
             <div class="egg-shell"></div>
             <div class="egg-shine"></div>

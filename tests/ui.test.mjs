@@ -24,6 +24,8 @@ const ok = (c, m) => { if (!c) { console.log('❌', m); fails++; } else console.
 
 const state = S.createState();
 ['chiot', 'renard', 'dragonfeu', 'blob99'].forEach((id) => S.addPet(state, id));
+S.addPet(state, 'tigre', 'arcenciel');
+S.addPet(state, 'chiot', 'dore');
 state.coins = 5_000_000;
 state.gems = 500;
 state.diamonds = 20;
@@ -49,6 +51,7 @@ const game = {
   resetGame: () => calls.push(['reset']),
   applySettings: () => calls.push(['applySettings']),
   setPalette: (i) => calls.push(['palette', i]),
+  goToHub: () => calls.push(['hub']),
   playSound: () => {},
   world: {},
 };
@@ -73,7 +76,18 @@ document.querySelector('[data-egg]:not([disabled])').dispatchEvent(new window.Mo
 ok(calls.some((c) => c[0] === 'hatch'), 'clic sur Éclore appelle hatchEgg');
 
 ui.openPanel('pets');
-ok(document.querySelectorAll('.pet-card').length === 4, `inventaire : ${document.querySelectorAll('.pet-card').length} pets`);
+ok(document.querySelectorAll('.pet-card').length === 6, `inventaire : ${document.querySelectorAll('.pet-card').length} pets`);
+ok(document.querySelectorAll('.mut-badge').length === 2, `badges de mutation : ${document.querySelectorAll('.mut-badge').length}`);
+ok(!!document.querySelector('.dex-progress'), 'barre de bestiaire affichée');
+ok(document.querySelector('#pets-counter').textContent.includes('3 /'), `compteur d'emplacements : ${document.querySelector('#pets-counter').textContent}`);
+
+// filtres
+document.querySelector('[data-filter="mutated"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok(document.querySelectorAll('.pet-card').length === 2, `filtre mutés : ${document.querySelectorAll('.pet-card').length}`);
+document.querySelector('[data-filter="equipped"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok(document.querySelectorAll('.pet-card').length === 3, `filtre équipés : ${document.querySelectorAll('.pet-card').length}`);
+document.querySelector('[data-filter="all"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+ok(document.querySelectorAll('.pet-card').length === 6, 'retour au filtre complet');
 document.querySelector('[data-toggle]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 ok(calls.some((c) => c[0] === 'toggle'), 'bouton équiper/retirer fonctionne');
 
@@ -97,6 +111,26 @@ ok(document.querySelectorAll('.toast').length === 1, 'toast affiché');
 ui.damage({ x: 10, y: 10 }, '12', 'crit');
 ok(document.querySelectorAll('.dmg').length === 1, 'dégât flottant affiché');
 
+// HUD en mode hub
+state.mode = 'hub';
+ui.updateHud(state);
+ok(document.querySelector('.zb-name').textContent.includes('Place'), `bandeau hub : ${document.querySelector('.zb-name').textContent}`);
+ok(document.querySelector('#btn-hub').classList.contains('hidden'), 'bouton Place masqué dans le hub');
+ok(document.querySelector('#hint-text').textContent.includes('portail'), 'indice du hub affiché');
+state.mode = 'zone';
+ui.updateHud(state);
+ok(!document.querySelector('#btn-hub').classList.contains('hidden'), 'bouton Place visible en zone');
+ok(document.querySelector('.zb-name').textContent.includes('Forêt'), `bandeau de zone : ${document.querySelector('.zb-name').textContent}`);
+ok(document.querySelector('#pets-badge').textContent === '6', `badge du nombre de pets : ${document.querySelector('#pets-badge').textContent}`);
+
+// dock muté : on équipe deux pets mutés
+state.pets.forEach((p) => { p.equipped = false; });
+state.pets.find((p) => p.mutation === 'arcenciel').equipped = true;
+state.pets.find((p) => p.mutation === 'dore').equipped = true;
+ui.renderDock(state);
+ok(document.querySelectorAll('.dock-pet.mutated').length === 2, `pets mutés dans le dock : ${document.querySelectorAll('.dock-pet.mutated').length}`);
+ok(document.querySelectorAll('.mut-dot').length === 2, 'pastille de mutation dans le dock');
+
 // cible
 ui.setTarget({ def: { name: 'Coffre', coins: 320 }, hp: 50, maxHp: 100, scale: 1.2 }, state);
 ok(document.querySelector('#target-hud').classList.contains('hidden') === false, 'HUD cible visible');
@@ -105,12 +139,14 @@ ui.setTarget(null, state);
 ok(document.querySelector('#target-hud').classList.contains('hidden'), 'HUD cible masqué');
 
 // éclosion
-const pets = [{ id: 'dragonfeu' }, { id: 'blob99' }];
+const pets = [{ id: 'dragonfeu' }, { id: 'blob99' }, { id: 'tigre', mutation: 'arcenciel' }];
 const egg = data.EGGS.oeuf_prairie;
 ui.showHatch(egg, pets, true);
 ok(!document.querySelector('#hatch-overlay').classList.contains('hidden'), 'overlay d’éclosion visible');
 await new Promise((r) => setTimeout(r, 400));
-ok(document.querySelectorAll('.hatch-pet').length === 2, `résultats d’éclosion : ${document.querySelectorAll('.hatch-pet').length}`);
+ok(document.querySelectorAll('.hatch-pet').length === 3, `résultats d’éclosion : ${document.querySelectorAll('.hatch-pet').length}`);
+ok(document.querySelectorAll('.hp-mut').length === 1, 'mutation indiquée sur le pet');
+ok(document.querySelector('#hatch-title').textContent.includes('ARC-EN-CIEL'), `titre d'éclosion : ${document.querySelector('#hatch-title').textContent}`);
 ok(document.querySelector('#hatch-close').classList.contains('hidden') === false, 'bouton fermer visible');
 ui.hideHatch();
 ok(document.querySelector('#hatch-overlay').classList.contains('hidden'), 'overlay fermé');

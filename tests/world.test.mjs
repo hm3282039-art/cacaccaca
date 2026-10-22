@@ -36,7 +36,7 @@ const fakeRenderer = {
 let fails = 0;
 const ok = (c, m) => { if (!c) { console.log('❌', m); fails++; } else console.log('✅', m); };
 
-const events = { hits: 0, broken: 0, texts: 0, targets: 0 };
+const events = { hits: 0, broken: 0, texts: 0, targets: 0, portals: [], machine: 0 };
 const world = new World(canvas, {
   onPlayerHit: (b) => { events.hits++; if (b.hp > 0) world.applyDamage(b, 5, ''); },
   onBroken: () => { events.broken++; },
@@ -46,6 +46,8 @@ const world = new World(canvas, {
     if (!text) { console.log('❌ texte de dégât vide'); fails++; }
   },
   onTargetChange: () => { events.targets++; },
+  onPortal: (z) => { events.portals.push(z); },
+  onEggMachine: () => { events.machine++; },
 }, { renderer: fakeRenderer });
 
 ok(world.scene.children.length > 5, `scène initialisée (${world.scene.children.length} enfants)`);
@@ -63,6 +65,70 @@ for (const zone of ZONES) {
   ok(!err && world.breakables.length === 9, `zone ${zone.id} (${zone.name}) construite : ${world.breakables.length} objets${err ? ' — ' + err.message : ''}`);
   if (err) console.log(err.stack);
 }
+
+/* ---------------- HUB ---------------- */
+let hubErr = null;
+try { world.buildHub({ unlockedZones: [1, 2] }); } catch (e) { hubErr = e; }
+ok(!hubErr && world.mode === 'hub', `hub construit${hubErr ? ' — ' + hubErr.message : ''}`);
+if (hubErr) console.log(hubErr.stack);
+ok(world.portals.length === 6, `6 portails : ${world.portals.length}`);
+ok(world.breakables.length === 0, 'aucun objet à casser dans le hub');
+ok(world.hitMeshes.length === 7, `collisions hub : ${world.hitMeshes.length} (6 portails + machine)`);
+ok(world.portals.filter((p) => p.unlocked).length === 2, 'portails débloqués marqués');
+
+// cadrage : tous les portails doivent être visibles
+world.update(0.02);
+world.render();
+const frustum = new THREE.Frustum().setFromProjectionMatrix(
+  new THREE.Matrix4().multiplyMatrices(world.camera.projectionMatrix, world.camera.matrixWorldInverse),
+);
+const visiblePortals = world.portals.filter((p) => {
+  const pos = new THREE.Vector3();
+  p.group.getWorldPosition(pos);
+  pos.y = 2;
+  return frustum.containsPoint(pos);
+});
+ok(visiblePortals.length === 6, `portails visibles à l'écran : ${visiblePortals.length}/6`);
+ok(frustum.containsPoint(new THREE.Vector3(0, 2.2, 0)), 'fontaine dans le champ de la caméra');
+
+// clic sur un portail
+const portal = world.portals[2];
+const aimP = new THREE.Vector3();
+portal.group.getWorldPosition(aimP);
+aimP.y = 1.8;
+world.update(0.016);
+world.render();
+aimP.project(world.camera);
+world.clickAt((aimP.x * 0.5 + 0.5) * 900, (-aimP.y * 0.5 + 0.5) * 600);
+ok(events.portals.length === 1 && events.portals[0] === portal.zone.id, `clic portail → zone ${events.portals.join(',')}`);
+
+// clic sur la machine à œufs
+const machine = world.hitMeshes.find((h) => h.userData.kind === 'machine');
+const aimM = new THREE.Vector3();
+machine.getWorldPosition(aimM);
+aimM.project(world.camera);
+world.clickAt((aimM.x * 0.5 + 0.5) * 900, (-aimM.y * 0.5 + 0.5) * 600);
+ok(events.machine >= 1, 'clic machine à œufs → boutique');
+
+// boucle du hub stable
+let hubLoopErr = null;
+try { for (let i = 0; i < 150; i++) { world.update(1 / 60); world.render(); } } catch (e) { hubLoopErr = e; }
+ok(!hubLoopErr, `boucle hub stable${hubLoopErr ? ' — ' + hubLoopErr.message : ''}`);
+ok(world.hubEgg.rotation.y > 0, 'œuf de la machine animé');
+
+// pets mutés
+world.setPets([
+  { ...PETS.chiot, mutation: 'dore' },
+  { ...PETS.dragonfeu, mutation: 'arcenciel' },
+  { ...PETS.blob99, mutation: 'prismatique' },
+]);
+ok(world.pets.length === 3 && world.pets.every((p) => p.halo), 'halos sur les 3 pets mutés');
+const rainbowPet = world.pets.find((p) => p.mutation === 'arcenciel');
+ok(rainbowPet.animatedMats.length > 0, `matériaux animés arc-en-ciel : ${rainbowPet.animatedMats.length}`);
+const hueA = rainbowPet.animatedMats[0].emissive.getHSL({ h: 0, s: 0, l: 0 }).h;
+world.update(0.4);
+const hueB = rainbowPet.animatedMats[0].emissive.getHSL({ h: 0, s: 0, l: 0 }).h;
+ok(hueA !== hueB, 'la couleur arc-en-ciel évolue');
 
 // retour en zone 1 pour les tests d'interaction
 world.buildZone(ZONES[0], zoneLayout(1));
@@ -85,7 +151,7 @@ aim.project(world.camera);
 const cx = (aim.x * 0.5 + 0.5) * 900;
 const cy = (-aim.y * 0.5 + 0.5) * 600;
 const picked = world.pickAt(cx, cy);
-ok(picked === b, `raycast touche l'objet visé (index ${picked?.index})`);
+ok(picked && picked.kind === 'breakable' && picked.breakable === b, `raycast touche l'objet visé (${picked?.kind} #${picked?.breakable?.index})`);
 world.player.position.copy(b.stand);
 world.update(0.016);
 const hitsBefore = events.hits;

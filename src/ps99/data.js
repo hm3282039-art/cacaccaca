@@ -15,6 +15,56 @@ export const RARITY = {
 export const RARITY_ORDER = ['commun', 'peucommun', 'rare', 'epique', 'legendaire', 'mythique', 'secret'];
 
 /**
+ * MUTATIONS — le sel de la collection : un même pet peut sortir Doré,
+ * Arc-en-ciel ou Prismatique, et devient beaucoup plus puissant.
+ * Les chances sont par œuf (plus l'œuf est cher, plus c'est généreux).
+ */
+export const MUTATIONS = {
+  normal: {
+    key: 'normal', name: 'Normal', mult: 1, color: '#a8b3c2', glow: null,
+  },
+  dore: {
+    key: 'dore', name: 'Doré', mult: 2.5, color: '#ffd24a', glow: '#ffb300',
+    odds: { 1: 0.09, 2: 0.10, 3: 0.11, 4: 0.12, 5: 0.13, 6: 0.14 },
+  },
+  arcenciel: {
+    key: 'arcenciel', name: 'Arc-en-ciel', mult: 8, color: '#ff7ab8', glow: '#a855f7',
+    odds: { 1: 0.018, 2: 0.022, 3: 0.026, 4: 0.03, 5: 0.034, 6: 0.04 },
+  },
+  prismatique: {
+    key: 'prismatique', name: 'Prismatique', mult: 25, color: '#7cf2ff', glow: '#ffffff',
+    odds: { 1: 0.002, 2: 0.0025, 3: 0.003, 4: 0.004, 5: 0.005, 6: 0.006 },
+  },
+};
+
+export const MUTATION_ORDER = ['normal', 'dore', 'arcenciel', 'prismatique'];
+
+/** Tire une mutation pour un œuf donné (zone = palier de chance). */
+export function rollMutation(eggZone, rng = Math.random) {
+  const r = rng();
+  let acc = 0;
+  // du plus rare au plus commun
+  for (const key of ['prismatique', 'arcenciel', 'dore']) {
+    const m = MUTATIONS[key];
+    acc += m.odds[eggZone] ?? 0.01;
+    if (r < acc) return m;
+  }
+  return MUTATIONS.normal;
+}
+
+export function mutationChances(eggZone) {
+  const out = {};
+  let rest = 1;
+  for (const key of ['prismatique', 'arcenciel', 'dore']) {
+    const c = MUTATIONS[key].odds[eggZone] ?? 0.01;
+    out[key] = c;
+    rest -= c;
+  }
+  out.normal = Math.max(0, rest);
+  return out;
+}
+
+/**
  * PETS — chaque pet est décrit par :
  *  family    : archétype de modèle 3D
  *  colors    : palette du modèle
@@ -131,10 +181,85 @@ export const PETS = {
     id: 'blob99', name: 'Blob 99', rarity: 'secret', emoji: '👾', mult: 1.1,
     family: 'slime', colors: { main: '#22d3ee', belly: '#a5f3fc', accent: '#0e7490' }, shiny: true,
   },
+
+  /* ---- deuxième vague : bestiaire élargi ---- */
+  cochon: {
+    id: 'cochon', name: 'Cochon', rarity: 'commun', emoji: '🐷', mult: 1.02,
+    family: 'pig', colors: { main: '#ffb3c7', belly: '#ffe0e8', accent: '#e08aa0' },
+  },
+  poussin: {
+    id: 'poussin', name: 'Poussin', rarity: 'commun', emoji: '🐤', mult: 0.98,
+    family: 'chick', colors: { main: '#ffe066', belly: '#fff6cc', accent: '#ff9f1c' },
+  },
+  raton: {
+    id: 'raton', name: 'Raton laveur', rarity: 'peucommun', emoji: '🦝', mult: 1.08,
+    family: 'raccoon', colors: { main: '#9aa3ad', belly: '#e8edf3', accent: '#2b2b33' },
+  },
+  tortue: {
+    id: 'tortue', name: 'Tortue', rarity: 'peucommun', emoji: '🐢', mult: 1.12,
+    family: 'turtle', colors: { main: '#6ab04c', belly: '#f2e8c9', accent: '#3d7a2a' },
+  },
+  chouette: {
+    id: 'chouette', name: 'Chouette', rarity: 'peucommun', emoji: '🦉', mult: 1.16,
+    family: 'owl', colors: { main: '#b98a5a', belly: '#f4e3c6', accent: '#6b4527' },
+  },
+  singe: {
+    id: 'singe', name: 'Singe', rarity: 'rare', emoji: '🐒', mult: 1.06,
+    family: 'monkey', colors: { main: '#a97442', belly: '#f0cfae', accent: '#6d4622' },
+  },
+  tigre: {
+    id: 'tigre', name: 'Tigre', rarity: 'rare', emoji: '🐯', mult: 1.12,
+    family: 'tiger', colors: { main: '#f59e0b', belly: '#fff1cf', accent: '#2b1a08' },
+  },
+  cerf: {
+    id: 'cerf', name: 'Cerf', rarity: 'rare', emoji: '🦌', mult: 1.18,
+    family: 'deer', colors: { main: '#b98558', belly: '#f4e1c8', accent: '#6b4a2a' },
+  },
+  axolotl: {
+    id: 'axolotl', name: 'Axolotl', rarity: 'rare', emoji: '🦎', mult: 1.22,
+    family: 'axolotl', colors: { main: '#ff9ec7', belly: '#ffd9e8', accent: '#e0609a' },
+  },
+  licorne: {
+    id: 'licorne', name: 'Licorne', rarity: 'epique', emoji: '🦄', mult: 1.08,
+    family: 'unicorn', colors: { main: '#f7f2ff', belly: '#ffffff', accent: '#ff9ec7' }, rainbow: true,
+  },
+  elephant: {
+    id: 'elephant', name: 'Éléphant', rarity: 'epique', emoji: '🐘', mult: 1.12,
+    family: 'elephant', colors: { main: '#9aa8c4', belly: '#d3dcf0', accent: '#6a7898' },
+  },
+  fantome: {
+    id: 'fantome', name: 'Fantôme', rarity: 'epique', emoji: '👻', mult: 1.18,
+    family: 'ghost', colors: { main: '#e8f4ff', belly: '#ffffff', accent: '#a9c7e8' },
+  },
+  hydre: {
+    id: 'hydre', name: 'Hydre', rarity: 'legendaire', emoji: '🐍', mult: 1.08,
+    family: 'hydra', colors: { main: '#4ade80', belly: '#d9ffd9', accent: '#1a7a44' },
+  },
+  mecatron: {
+    id: 'mecatron', name: 'Mécatron', rarity: 'legendaire', emoji: '🦾', mult: 1.14,
+    family: 'mecha', colors: { main: '#8ea2bd', belly: '#dfe9f7', accent: '#3ddcff' },
+  },
+  cerbere: {
+    id: 'cerbere', name: 'Cerbère', rarity: 'mythique', emoji: '🐕‍🦺', mult: 1.08,
+    family: 'hydra', colors: { main: '#a855f7', belly: '#e9d5ff', accent: '#4c1d95' },
+  },
+  titan: {
+    id: 'titan', name: 'Titan', rarity: 'mythique', emoji: '🗿', mult: 1.16,
+    family: 'mecha', colors: { main: '#4b5563', belly: '#9ca3af', accent: '#f59e0b' },
+  },
+  prisme: {
+    id: 'prisme', name: 'Prisme', rarity: 'secret', emoji: '🔮', mult: 1.04,
+    family: 'ghost', colors: { main: '#c4b5fd', belly: '#f5f3ff', accent: '#7c3aed' }, shiny: true,
+  },
+  dragondieu: {
+    id: 'dragondieu', name: 'Dragon divin', rarity: 'secret', emoji: '🐲', mult: 1.2,
+    family: 'dragon', colors: { main: '#ffd24a', belly: '#fff3c4', accent: '#e0a800' }, shiny: true,
+  },
 };
 
-export function petPower(pet) {
-  return Math.round(RARITY[pet.rarity].power * pet.mult);
+export function petPower(pet, mutation = 'normal') {
+  const m = MUTATIONS[mutation] || MUTATIONS.normal;
+  return Math.round(RARITY[pet.rarity].power * pet.mult * m.mult);
 }
 
 /* ------------------------------------------------------------
@@ -145,37 +270,37 @@ export const ZONES = [
     id: 1, name: 'Prairie', egg: 'oeuf_prairie', price: 0,
     ground: '#7ccf5f', groundAlt: '#69bb4e', path: '#d9c89a', fog: '#bfe9ff',
     props: { trees: 7, rocks: 4, flowers: 22 },
-    hpMult: 1, coinMult: 1,
+    hpMult: 1, coinMult: 1, portal: '#7ccf5f', icon: '🌿',
   },
   {
     id: 2, name: 'Forêt', egg: 'oeuf_foret', price: 4000,
     ground: '#4f9f52', groundAlt: '#418a45', path: '#b8a06f', fog: '#a9d6c0',
     props: { trees: 13, rocks: 5, flowers: 12 },
-    hpMult: 8, coinMult: 12,
+    hpMult: 8, coinMult: 12, portal: '#3f8f52', icon: '🌲',
   },
   {
     id: 3, name: 'Plage', egg: 'oeuf_plage', price: 60000,
     ground: '#e8d9a8', groundAlt: '#dccb95', path: '#c2a878', fog: '#cdeeff',
     props: { trees: 5, rocks: 8, palms: 7, flowers: 0 },
-    hpMult: 70, coinMult: 140,
+    hpMult: 70, coinMult: 140, portal: '#38bdf8', icon: '🏖️',
   },
   {
     id: 4, name: 'Volcan', egg: 'oeuf_volcan', price: 900000,
     ground: '#4a3b3b', groundAlt: '#3b2e2e', path: '#6b4a3a', fog: '#ffb38a',
     props: { rocks: 14, lava: 9, trees: 0, flowers: 0 },
-    hpMult: 600, coinMult: 2000,
+    hpMult: 600, coinMult: 2000, portal: '#f97316', icon: '🌋',
   },
   {
     id: 5, name: 'Galaxie', egg: 'oeuf_galaxie', price: 15000000,
     ground: '#221a4a', groundAlt: '#1a1438', path: '#4a3a8a', fog: '#b39dff',
     props: { crystals: 14, rocks: 5, stars: 40, trees: 0, flowers: 0 },
-    hpMult: 5000, coinMult: 26000,
+    hpMult: 5000, coinMult: 26000, portal: '#a78bfa', icon: '🌌',
   },
   {
     id: 6, name: 'Néon', egg: 'oeuf_neon', price: 300000000,
     ground: '#141c33', groundAlt: '#0f1628', path: '#25406b', fog: '#7de7ff',
     props: { neons: 18, crystals: 6, stars: 26, trees: 0, flowers: 0 },
-    hpMult: 45000, coinMult: 350000,
+    hpMult: 45000, coinMult: 350000, portal: '#3ddcff', icon: '💠',
   },
 ];
 
@@ -207,46 +332,55 @@ export function zoneLayout(zoneId) {
 export const EGGS = {
   oeuf_prairie: {
     id: 'oeuf_prairie', name: 'Œuf Prairie', zone: 1, price: 150, color: '#8ef0a0', button: 'Éclore',
-    loot: { chiot: 30, chaton: 26, lapinou: 20, souris: 15, grenouille: 8, renard: 1.6, abeille: 0.4 },
+    loot: {
+      chiot: 26, chaton: 22, lapinou: 17, souris: 13, grenouille: 9,
+      cochon: 10, poussin: 9, renard: 2, abeille: 1, raton: 0.5,
+    },
   },
   oeuf_foret: {
     id: 'oeuf_foret', name: 'Œuf Forêt', zone: 2, price: 4500, color: '#57c785', button: 'Éclore',
     loot: {
-      chiot: 16, chaton: 13, lapinou: 11, souris: 9, grenouille: 7,
-      renard: 12, panda: 9, abeille: 8, pingouin: 5, herisson: 4,
+      chiot: 10, chaton: 9, lapinou: 8, souris: 7, grenouille: 6,
+      renard: 11, panda: 9, abeille: 8, pingouin: 6, herisson: 5,
+      raton: 7, tortue: 5, chouette: 4, cochon: 5,
       ourson: 3, dragonnet: 1.5, robo: 1, loupglace: 0.4,
     },
   },
   oeuf_plage: {
     id: 'oeuf_plage', name: 'Œuf Plage', zone: 3, price: 65000, color: '#6ddcff', button: 'Éclore',
     loot: {
-      renard: 12, panda: 10, abeille: 9, pingouin: 8, herisson: 7,
-      ourson: 12, crabe: 11, requin: 9, dragonnet: 6, robo: 5,
+      renard: 9, panda: 8, abeille: 7, pingouin: 7, herisson: 6,
+      raton: 6, tortue: 6, chouette: 5, singe: 6, tigre: 5, cerf: 4, axolotl: 3,
+      ourson: 9, crabe: 8, requin: 7, dragonnet: 6, robo: 5,
       loupglace: 3.4, golem: 2.2, phenix: 1.4, calmar: 1, dragonfeu: 0.4,
     },
   },
   oeuf_volcan: {
     id: 'oeuf_volcan', name: 'Œuf Volcan', zone: 4, price: 900000, color: '#ff8a3d', button: 'Éclore',
     loot: {
-      ourson: 10, crabe: 9, requin: 8, dragonnet: 7, robo: 7,
-      loupglace: 10, golem: 8, phenix: 7, calmar: 6,
-      dragonfeu: 4.5, yeti: 3, griffon: 2.2, dragonespace: 0.9, chatcosmique: 0.6,
+      ourson: 8, crabe: 7, requin: 6, dragonnet: 6, robo: 6,
+      singe: 5, tigre: 4, cerf: 3, axolotl: 3, licorne: 2.5, elephant: 2, fantome: 1.4,
+      loupglace: 8, golem: 7, phenix: 6, calmar: 5,
+      dragonfeu: 4.5, yeti: 3, griffon: 2.2, hydre: 1.6, mecatron: 1.2,
+      dragonespace: 0.9, chatcosmique: 0.6,
     },
   },
   oeuf_galaxie: {
     id: 'oeuf_galaxie', name: 'Œuf Galaxie', zone: 5, price: 20000000, color: '#a78bfa', button: 'Éclore',
     loot: {
-      loupglace: 9, golem: 8, phenix: 8, calmar: 7,
-      dragonfeu: 11, yeti: 9, griffon: 7,
-      dragonespace: 5, chatcosmique: 4.2, slimearcenciel: 1.6, chiendore: 1.1, blob99: 0.7,
+      loupglace: 7, golem: 6, phenix: 6, calmar: 5,
+      licorne: 6, elephant: 5, fantome: 4,
+      dragonfeu: 9, yeti: 7, griffon: 5, hydre: 4, mecatron: 3,
+      dragonespace: 5, chatcosmique: 4, cerbere: 2.4, titan: 2,
+      slimearcenciel: 1.6, chiendore: 1.1, blob99: 0.7, prisme: 0.5, dragondieu: 0.35,
     },
   },
   oeuf_neon: {
     id: 'oeuf_neon', name: 'Œuf Néon', zone: 6, price: 400000000, color: '#3ddcff', button: 'Éclore',
     loot: {
-      dragonfeu: 14, yeti: 12, griffon: 10,
-      dragonespace: 12, chatcosmique: 11,
-      slimearcenciel: 5, chiendore: 4, blob99: 3,
+      dragonfeu: 10, yeti: 9, griffon: 7, hydre: 6, mecatron: 5,
+      dragonespace: 9, chatcosmique: 8, cerbere: 6, titan: 5,
+      slimearcenciel: 4, chiendore: 3.5, blob99: 3, prisme: 2.5, dragondieu: 2,
     },
   },
 };

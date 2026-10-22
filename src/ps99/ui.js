@@ -2,13 +2,13 @@
    Interface — HUD, panneaux, toasts, éclosions
    ============================================================ */
 import {
-  EGGS, PETS, RARITY, RARITY_ORDER, UPGRADES, DIAMOND_BOOSTS, ZONES,
-  fmt, petPower, eggOdds, REBIRTH,
+  EGGS, PETS, RARITY, RARITY_ORDER, UPGRADES, DIAMOND_BOOSTS, ZONES, MUTATIONS,
+  fmt, petPower, eggOdds, REBIRTH, mutationChances,
 } from './data.js';
 import {
   equippedPets, maxEquipped, petSlots, upgradeCost, upgradeMaxed, boostCost, boostMaxed,
   petPowerOf, petSellValue, nextRebirthRequirement, canRebirth, zoneById, autoClicksPerSecond,
-  totalDps,
+  totalDps, collectionProgress,
 } from './state.js';
 import { AVATAR_PALETTES } from './models.js';
 
@@ -18,6 +18,8 @@ export class UI {
   constructor(game) {
     this.game = game;
     this.currentPanel = null;
+    this.petsFilter = 'all';
+    this.shopShowMutations = false;
     this.dmgCount = 0;
     this.init();
   }
@@ -27,6 +29,7 @@ export class UI {
     document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => this.closePanels()));
     $('#panel-backdrop').addEventListener('click', () => this.closePanels());
 
+    $('#btn-hub')?.addEventListener('click', () => this.game.goToHub());
     $('#btn-shop').addEventListener('click', () => this.openPanel('shop'));
     $('#btn-pets').addEventListener('click', () => this.openPanel('pets'));
     $('#btn-upgrades').addEventListener('click', () => this.openPanel('upgrades'));
@@ -61,11 +64,24 @@ export class UI {
     $('#stat-diamonds').textContent = String(state.diamonds);
     $('#hint-dps-value').textContent = fmt(totalDps(state));
     const z = zoneById(state.zone);
-    $('.zb-name').textContent = `Zone ${z.id} · ${z.name}`;
-    $('.zb-sub').textContent = `Multiplicateur de pièces x${fmt(z.coinMult)}`;
-    $('#hint-text').textContent = state.upgrades.auto > 0
-      ? `Tes pets tapent tout seuls (${autoClicksPerSecond(state).toFixed(1)} coups/s)`
-      : 'Clique sur les pièces pour les casser';
+    const inHub = state.mode === 'hub';
+    const banner = $('#zone-banner');
+    banner.classList.toggle('hub', inHub);
+    $('.zb-name').textContent = inHub ? '🏛️ Place centrale' : `${z.icon || '🧭'} Zone ${z.id} · ${z.name}`;
+    $('.zb-sub').textContent = inHub ? 'Portails · machine à œufs · fontaine' : `Pièces x${fmt(z.coinMult)}`;
+    $('#btn-hub').classList.toggle('hidden', inHub);
+    $('#hint-text').innerHTML = inHub
+      ? 'Clique sur un <b>portail</b> ou la <b>machine à œufs</b>'
+      : (state.upgrades.auto > 0
+        ? `Tes pets tapent tout seuls (${autoClicksPerSecond(state).toFixed(1)} coups/s)`
+        : 'Clique sur les pièces pour les casser');
+    // compteur de pets dans le bouton
+    const badge = $('#pets-badge');
+    if (badge) {
+      const n = state.pets.length;
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.classList.toggle('hidden', n === 0);
+    }
   }
 
   renderDock(state) {
@@ -77,9 +93,15 @@ export class UI {
       const pet = equipped[i];
       if (pet) {
         const def = PETS[pet.id];
-        items.push(`<div class="dock-pet" data-uid="${pet.uid}" title="${def.name} · ${RARITY[def.rarity].name}" style="border-color:${RARITY[def.rarity].color}">
+        const mut = MUTATIONS[pet.mutation || 'normal'];
+        const color = RARITY[def.rarity].color;
+        items.push(`<div class="dock-pet ${pet.mutation !== 'normal' ? 'mutated' : ''}"
+            data-uid="${pet.uid}"
+            title="${def.name} · ${RARITY[def.rarity].name}${pet.mutation !== 'normal' ? ' · ' + mut.name : ''}"
+            style="border-color:${pet.mutation !== 'normal' ? mut.color : color};--glow:${mut.color}">
           <span class="pet-emoji">${def.emoji}</span>
           ${pet.level > 0 ? `<span class="dot">+${pet.level}</span>` : ''}
+          ${pet.mutation !== 'normal' ? `<span class="mut-dot" style="background:${mut.color}">✦</span>` : ''}
         </div>`);
       } else {
         items.push('<div class="dock-empty">+</div>');
@@ -154,8 +176,9 @@ export class UI {
   }
 
   refreshOpenPanel() {
+    // on ne rafraîchit que les panneaux dont les valeurs bougent en continu ;
+    // l'inventaire est reconstruit uniquement sur action du joueur.
     if (this.currentPanel === 'shop') this.renderShop();
-    if (this.currentPanel === 'pets') this.renderPets();
     if (this.currentPanel === 'upgrades') this.renderUpgrades();
     if (this.currentPanel === 'rebirth') this.renderRebirth();
   }
@@ -177,13 +200,21 @@ export class UI {
       const secretLine = secret
         ? `<span style="color:${RARITY.secret.color}">✦ ${PETS[secret.petId].name} ${secret.pct.toFixed(2)}%</span>`
         : '';
+      const muts = mutationChances(egg.zone);
+      const mutLine = this.shopShowMutations
+        ? `<div class="egg-mut">${['dore', 'arcenciel', 'prismatique'].map((k) => `
+            <span style="color:${MUTATIONS[k].color}">✦ ${MUTATIONS[k].name} ${(muts[k] * 100).toFixed(2)}%</span>`).join('')}</div>`
+        : '';
+      const locked = !state.unlockedZones.includes(egg.zone);
       return `
-        <div class="egg-card">
-          <div class="egg-art" style="--egg:${egg.color}"></div>
+        <div class="egg-card ${locked ? 'locked' : ''}" style="--egg:${egg.color}">
+          ${locked ? '<span class="egg-lock">🔒 zone ' + egg.zone + '</span>' : ''}
+          <div class="egg-art"><span class="egg-pattern"></span></div>
           <h3>${egg.name}</h3>
-          <div class="egg-zone">Zone ${egg.zone} · ${zone?.name || ''}</div>
+          <div class="egg-zone">${zone?.icon || ''} ${zone?.name || ''}</div>
           <div class="egg-odds">${topOdds}</div>
-          ${secretLine ? `<div class="egg-odds">${secretLine}</div>` : ''}
+          ${secretLine ? `<div class="egg-odds secret">${secretLine}</div>` : ''}
+          ${mutLine}
           <div class="price">${fmt(egg.price)} 🪙</div>
           <div class="egg-buttons">
             <button class="primary-btn" data-egg="${egg.id}" data-count="1" ${canAfford ? '' : 'disabled'}>Éclore</button>
@@ -209,9 +240,19 @@ export class UI {
         </div>`;
     }).join('');
 
-    body.innerHTML = `<div class="shop-grid">${cards}</div>
+    body.innerHTML = `
+      <div class="shop-toolbar">
+        <span class="shop-hint">Les œufs les plus chers donnent les meilleurs pets <b>et</b> plus de mutations.</span>
+        <button class="mini-btn" id="toggle-mutations">${this.shopShowMutations ? '✦ Cacher les mutations' : '✦ Voir les mutations'}</button>
+      </div>
+      <div class="shop-grid">${cards}</div>
       <div class="section-title">Zones</div>
       ${zonesHtml}`;
+
+    $('#toggle-mutations')?.addEventListener('click', () => {
+      this.shopShowMutations = !this.shopShowMutations;
+      this.renderShop();
+    });
 
     body.querySelectorAll('[data-egg]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -239,36 +280,75 @@ export class UI {
     const state = this.game.state;
     const body = $('#pets-body');
     const equipped = equippedPets(state);
-    $('#pets-counter').textContent = `${equipped.length} / ${maxEquipped(state)} équipés · ${state.pets.length} au total`;
+    const col = collectionProgress(state);
+    $('#pets-counter').textContent = `${equipped.length} / ${maxEquipped(state)} équipés`;
+
+    const tabs = [
+      { id: 'all', label: `Tous ${state.pets.length}` },
+      { id: 'equipped', label: `Équipés ${equipped.length}` },
+      { id: 'mutated', label: `Mutés ${state.pets.filter((p) => (p.mutation || 'normal') !== 'normal').length}` },
+      { id: 'best', label: 'Top puissance' },
+    ];
+
+    const header = `
+      <div class="dex-bar">
+        <div class="dex-top">
+          <span>📖 Bestiaire</span>
+          <b>${col.count} / ${col.total}</b>
+        </div>
+        <div class="dex-progress"><div style="width:${col.pct.toFixed(1)}%"></div></div>
+      </div>
+      <div class="tabs">${tabs.map((t) => `
+        <button class="tab ${this.petsFilter === t.id ? 'active' : ''}" data-filter="${t.id}">${t.label}</button>
+      `).join('')}</div>`;
 
     if (state.pets.length === 0) {
-      body.innerHTML = `<div class="empty-note">Tu n'as encore aucun pet 🐾<br>Va dans la <b>Boutique</b> pour éclore ton premier œuf !</div>`;
+      body.innerHTML = header + `<div class="empty-note">Tu n'as encore aucun pet 🐾<br>Ouvre la <b>Boutique</b> et éclos ton premier œuf !</div>`;
+      this.bindPetTabs(body);
       return;
     }
 
-    const sorted = [...state.pets].sort((a, b) => {
-      if (a.equipped !== b.equipped) return a.equipped ? -1 : 1;
-      return petPowerOf(state, b) - petPowerOf(state, a);
-    });
+    let list = [...state.pets];
+    if (this.petsFilter === 'equipped') list = list.filter((p) => p.equipped);
+    if (this.petsFilter === 'mutated') list = list.filter((p) => (p.mutation || 'normal') !== 'normal');
 
-    body.innerHTML = `<div class="pets-grid">${sorted.map((pet) => {
+    if (this.petsFilter === 'best') {
+      list.sort((a, b) => petPowerOf(state, b) - petPowerOf(state, a));
+    } else {
+      list.sort((a, b) => {
+        if (a.equipped !== b.equipped) return a.equipped ? -1 : 1;
+        const d = petPowerOf(state, b) - petPowerOf(state, a);
+        return d !== 0 ? d : PETS[a.id].name.localeCompare(PETS[b.id].name);
+      });
+    }
+
+    const cards = list.map((pet) => {
       const def = PETS[pet.id];
       const rar = RARITY[def.rarity];
+      const mut = MUTATIONS[pet.mutation || 'normal'];
       const power = petPowerOf(state, pet);
+      const isMut = (pet.mutation || 'normal') !== 'normal';
       return `
-        <div class="pet-card ${pet.equipped ? 'equipped' : ''}" style="--rar:${rar.color}">
+        <div class="pet-card ${pet.equipped ? 'equipped' : ''} ${isMut ? 'mutated' : ''}"
+             style="--rar:${rar.color};--mut:${mut.color}">
           ${pet.equipped ? '<span class="badge">ÉQUIPÉ</span>' : ''}
+          ${isMut ? `<span class="mut-badge" style="--mut:${mut.color}">✦ ${mut.name}</span>` : ''}
           <div class="pet-emoji">${def.emoji}</div>
           <div class="pet-name">${def.name}${pet.level > 0 ? ` <span style="color:#3ddcff">+${pet.level}</span>` : ''}</div>
           <div class="pet-rarity">${rar.name}</div>
-          <div class="pet-power">⚔️ ${fmt(power)}</div>
+          <div class="pet-power">⚔️ ${fmt(power)}${isMut ? ` <span class="mut-x">x${mut.mult}</span>` : ''}</div>
           <div class="pet-actions">
             <button class="mini-btn" data-toggle="${pet.uid}">${pet.equipped ? 'Retirer' : 'Équiper'}</button>
             <button class="mini-btn danger" data-sell="${pet.uid}">+${fmt(petSellValue(pet))}🪙</button>
           </div>
         </div>`;
-    }).join('')}</div>`;
+    }).join('');
 
+    body.innerHTML = header + (cards
+      ? `<div class="pets-grid">${cards}</div>`
+      : `<div class="empty-note">Rien dans ce filtre.</div>`);
+
+    this.bindPetTabs(body);
     body.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', () => {
       this.game.togglePet(b.dataset.toggle);
       this.renderPets();
@@ -277,6 +357,15 @@ export class UI {
       this.game.sellPet(b.dataset.sell);
       this.renderPets();
     }));
+  }
+
+  bindPetTabs(body) {
+    body.querySelectorAll('[data-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.petsFilter = btn.dataset.filter;
+        this.renderPets();
+      });
+    });
   }
 
   /* ---------------- Améliorations ---------------- */
@@ -446,6 +535,7 @@ export class UI {
     const closeBtn = $('#hatch-close');
 
     overlay.classList.remove('hidden');
+    document.querySelector('.hatch-stage')?.classList.remove('rainbow');
     eggEl.style.setProperty('--egg', egg.color);
     eggEl.classList.remove('cracked');
     eggEl.style.display = '';
@@ -464,20 +554,42 @@ export class UI {
         result.innerHTML = pets.map((p, i) => {
           const def = PETS[p.id];
           const rar = RARITY[def.rarity];
-          return `<div class="hatch-pet ${def.rarity === 'secret' ? 'secret' : ''}" style="--rar:${rar.color};animation-delay:${i * 0.1}s">
+          const mut = MUTATIONS[p.mutation || 'normal'];
+          const isMut = (p.mutation || 'normal') !== 'normal';
+          return `<div class="hatch-pet ${def.rarity === 'secret' ? 'secret' : ''} ${isMut ? 'mutated' : ''}"
+              style="--rar:${rar.color};--mut:${mut.color};animation-delay:${i * 0.1}s">
+            ${isMut ? `<div class="hp-mut">✦ ${mut.name}</div>` : ''}
             <div class="hp-emoji">${def.emoji}</div>
             <div class="hp-name">${def.name}</div>
             <div class="hp-rarity">${rar.name}</div>
-            <div class="hp-power">⚔️ ${fmt(petPower(def))}</div>
+            <div class="hp-power">⚔️ ${fmt(petPower(def, p.mutation || 'normal'))}${isMut ? ` <span class="mut-x">x${mut.mult}</span>` : ''}</div>
           </div>`;
         }).join('');
         const hasSecret = pets.some((p) => PETS[p.id].rarity === 'secret');
+        const bestMut = pets.reduce((best, p) => {
+          const order = ['normal', 'dore', 'arcenciel', 'prismatique'];
+          return order.indexOf(p.mutation || 'normal') > order.indexOf(best.mutation || 'normal') ? p : best;
+        }, pets[0]);
+        const mutKey = bestMut.mutation || 'normal';
+        const isPrisma = mutKey === 'prismatique';
+        const isRainbow = mutKey === 'arcenciel';
+        const isGold = mutKey === 'dore';
         const best = pets.reduce((b, p) => (RARITY[PETS[p.id].rarity].order > RARITY[PETS[b.id].rarity].order ? p : b), pets[0]);
-        title.textContent = hasSecret ? '✨ PET SECRET ! ✨' : `Nouveau pet · ${RARITY[PETS[best.id].rarity].name}`;
-        title.style.color = hasSecret ? '#fde047' : RARITY[PETS[best.id].rarity].color;
+        title.textContent = isPrisma ? '💠 PRISMATIQUE ! 💠'
+          : isRainbow ? '🌈 ARC-EN-CIEL !'
+            : hasSecret ? '✨ PET SECRET ! ✨'
+              : isGold ? '✦ PET DORÉ !'
+                : `Nouveau pet · ${RARITY[PETS[best.id].rarity].name}`;
+        title.style.color = isPrisma ? '#7cf2ff'
+          : isRainbow ? '#ff7ab8'
+            : hasSecret ? '#fde047'
+              : isGold ? '#ffd24a'
+                : RARITY[PETS[best.id].rarity].color;
+        document.querySelector('.hatch-stage')?.classList.toggle('rainbow', isRainbow || isPrisma);
         closeBtn.classList.remove('hidden');
-        this.confetti(hasSecret ? 40 : 18, RARITY[PETS[best.id].rarity].color);
-        this.game.playSound(hasSecret ? 'secret' : 'hatch');
+        this.confetti(isPrisma ? 60 : isRainbow ? 45 : hasSecret ? 40 : 18, isPrisma ? '#7cf2ff' : RARITY[PETS[best.id].rarity].color);
+        this.game.playSound(isPrisma || isRainbow ? 'secret' : 'hatch');
+        if (isPrisma || isRainbow) setTimeout(() => this.game.playSound('secret'), 260);
       }, quick ? 120 : 520);
     };
 

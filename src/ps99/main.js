@@ -6,8 +6,8 @@ import { World } from './world3d.js';
 import { UI } from './ui.js';
 import * as S from './state.js';
 import {
-  EGGS, PETS, RARITY, ZONES, UPGRADES, DIAMOND_BOOSTS,
-  zoneLayout, rollPet, fmt, REBIRTH, eggOdds,
+  EGGS, PETS, RARITY, ZONES, UPGRADES, DIAMOND_BOOSTS, MUTATIONS,
+  zoneLayout, rollPet, rollMutation, mutationChances, fmt, REBIRTH, eggOdds,
 } from './data.js';
 import { AVATAR_PALETTES } from './models.js';
 
@@ -34,11 +34,14 @@ class Game {
       onBroken: (b) => this.onBroken(b),
       onDamageText: (pos, text, cls) => this.ui?.damage(pos, text, cls),
       onTargetChange: (b) => this.ui?.setTarget(b, this.state),
+      onPortal: (zoneId) => this.travelTo(zoneId),
+      onEggMachine: () => this.ui?.openPanel('shop'),
     });
     this.ui = new UI(this);
 
     this.applySettings(true);
-    this.buildZone(true);
+    if (state.mode === 'zone' && S.zoneUnlocked(state, state.zone)) this.buildZone(true);
+    else this.buildHub();
     this.refreshPets();
     this.ui.updateHud(this.state);
     this.ui.renderDock(this.state);
@@ -49,8 +52,9 @@ class Game {
     else {
       S.addPet(state, 'chiot');
       this.refreshPets();
-      setTimeout(() => this.ui.toast('Bienvenue ! Clique sur un tas de pièces pour commencer 🪙'), 700);
-      setTimeout(() => this.ui.toast('🌿 Tu es dans la zone 1 : Prairie'), 1900);
+      setTimeout(() => this.ui.toast('Bienvenue sur la place ! 🌟', 'good'), 700);
+      setTimeout(() => this.ui.toast('Clique sur un <b>portail</b> pour partir casser des pièces', ''), 1900);
+      setTimeout(() => this.ui.toast('🛒 Ou sur la <b>machine à œufs</b> pour un premier pet', ''), 3400);
     }
 
     this.bindGlobalEvents();
@@ -193,12 +197,52 @@ class Game {
   buildZone(resetPets = false) {
     const state = this.state;
     const zone = S.zoneById(state.zone);
+    state.mode = 'zone';
     this.world.buildZone(zone, zoneLayout(zone.id));
     if (resetPets) this.refreshPets();
     if (this.ui) {
       this.ui.updateHud(state);
       this.ui.setTarget(null, state);
     }
+  }
+
+  buildHub() {
+    this.state.mode = 'hub';
+    this.world.buildHub({ unlockedZones: this.state.unlockedZones });
+    this.world.setPets(S.equippedPets(this.state).map((p) => ({ ...PETS[p.id], mutation: p.mutation })).filter(Boolean));
+    if (this.ui) {
+      this.ui.updateHud(this.state);
+      this.ui.setTarget(null, this.state);
+    }
+  }
+
+  goToHub() {
+    this.state.mode = 'hub';
+    this.buildHub();
+    this.ui.toast('🏛️ Retour sur la place', '');
+    this.playSound('buy');
+    S.saveState(this.state);
+  }
+
+  /** Clic sur un portail du hub. */
+  travelTo(zid) {
+    const state = this.state;
+    const zone = ZONES.find((z) => z.id === zid);
+    if (!zone) return;
+    if (!S.zoneUnlocked(state, zid)) {
+      this.ui.toast(`🔒 ${zone.name} — débloque-la pour ${fmt(zone.price)} 🪙`, 'bad');
+      this.ui.toast('Ouvre la boutique pour débloquer la zone', '');
+      this.playSound('error');
+      this.ui.openPanel('shop');
+      return;
+    }
+    state.mode = 'zone';
+    state.zone = zid;
+    this.buildZone();
+    this.world.player.position.set(0, 0, 7.6);
+    this.ui.toast(`${zone.icon || '🧭'} ${zone.name} — pièces x${fmt(zone.coinMult)}`, 'good');
+    this.playSound('buy');
+    S.saveState(state);
   }
 
   goToZone(zid) {
@@ -209,9 +253,10 @@ class Game {
     }
     if (state.zone === zid) return;
     state.zone = zid;
+    state.mode = 'zone';
     this.buildZone();
     const zone = S.zoneById(zid);
-    this.ui.toast(`🧭 Direction : ${zone.name}`, 'good');
+    this.ui.toast(`${zone.icon || '🧭'} Direction : ${zone.name}`, 'good');
     this.playSound('buy');
     S.saveState(state);
   }
@@ -235,7 +280,9 @@ class Game {
 
   refreshPets() {
     const state = this.state;
-    const defs = S.equippedPets(state).map((p) => PETS[p.id]).filter(Boolean);
+    const defs = S.equippedPets(state)
+      .map((p) => (PETS[p.id] ? { ...PETS[p.id], mutation: p.mutation || 'normal' } : null))
+      .filter(Boolean);
     this.world.setPets(defs);
     this.ui.renderDock(state);
   }
@@ -254,7 +301,8 @@ class Game {
     const pets = [];
     for (let i = 0; i < count; i++) {
       const def = rollPet(egg);
-      const pet = S.addPet(state, def.id);
+      const mutation = rollMutation(egg.zone).key;
+      const pet = S.addPet(state, def.id, mutation);
       if (pet) pets.push(pet);
     }
     state.stats.totalHatches += count;
@@ -264,6 +312,11 @@ class Game {
     this.ui.showHatch(egg, pets, state.settings.autoHatch);
     const bestRarity = pets.reduce((best, p) => Math.max(best, RARITY[PETS[p.id].rarity].order), 0);
     if (bestRarity >= 5) this.ui.toast('🌟 Un pet mythique ou mieux !', 'good');
+    const mutated = pets.filter((p) => p.mutation && p.mutation !== 'normal');
+    if (mutated.length) {
+      const names = [...new Set(mutated.map((p) => MUTATIONS[p.mutation].name))].join(', ');
+      this.ui.toast(`✨ Mutation ${names} !`, 'good');
+    }
     S.saveState(state);
     return pets;
   }

@@ -34,14 +34,24 @@ Object.defineProperty(canvas.parentElement, 'clientHeight', { value: 800, config
 window.innerWidth = 1280; window.innerHeight = 800;
 
 const errors = [];
-process.on('uncaughtException', (e) => { errors.push(e); });
+process.on('uncaughtException', (e) => { errors.push(e); console.log('❌ exception :', e.message); });
+process.on('unhandledRejection', (e) => { errors.push(e); console.log('❌ promesse rejetée :', e?.message || e); });
+
+// chien de garde : si le test se bloque, on le dit au lieu de tourner dans le vide
+const watchdog = setTimeout(() => {
+  console.log('💥 Le test de démarrage est bloqué (timeout 25s)');
+  process.exit(1);
+}, 25000);
+watchdog.unref?.();
 
 await import('../src/ps99/main.js');
 // laisse tourner quelques frames + les timers de boot
 await new Promise((r) => setTimeout(r, 1200));
 
 const state = window.__petblocs_state;
+const game = window.__petblocs_game;
 ok(!!state, 'état global créé');
+ok(!!game, 'instance de jeu accessible');
 ok(state && state.pets.length === 1 && state.pets[0].id === 'chiot', `pet de départ offert (${state?.pets.map((p) => p.id)})`);
 ok(!document.querySelector('#loading'), 'écran de chargement retiré');
 ok(document.querySelectorAll('.dock-pet').length === 1, 'dock avec le pet de départ');
@@ -55,9 +65,46 @@ const clickAt = (x, y, target = canvas) => {
   target.dispatchEvent(evUp);
 };
 
-// clic au centre de l'écran : doit toucher un objet à casser
-clickAt(640, 400);
-await new Promise((r) => setTimeout(r, 300));
+// --- démarrage dans le hub
+ok(state.mode === 'hub', `le jeu démarre sur la place (${state.mode})`);
+ok(game.world.mode === 'hub' && game.world.portals.length === 6, `${game.world.portals.length} portails visibles`);
+ok(document.querySelector('.zb-name').textContent.includes('Place'), 'bandeau en mode place');
+ok(document.querySelector('#btn-hub').classList.contains('hidden'), 'bouton Place masqué puisqu\'on y est déjà');
+
+// clic sur le portail de la zone 1 (débloquée)
+const THREE = await import('three');
+const z1 = game.world.portals.find((p) => p.zone.id === 1);
+const aim = new THREE.Vector3();
+z1.group.getWorldPosition(aim);
+aim.y = 1.9;
+game.world.update(0.016);
+aim.project(game.world.camera);
+clickAt((aim.x * 0.5 + 0.5) * 1280, (-aim.y * 0.5 + 0.5) * 800);
+await new Promise((r) => setTimeout(r, 350));
+ok(state.mode === 'zone' && state.zone === 1, `voyage via portail → ${state.mode}/${state.zone}`);
+ok(game.world.breakables.length === 9, 'objets à casser présents en zone');
+
+// retour au hub
+game.goToHub();
+await new Promise((r) => setTimeout(r, 250));
+ok(state.mode === 'hub' && game.world.mode === 'hub', 'retour au hub');
+
+// portail verrouillé : message d'erreur, pas de voyage
+game.world.update(0.016);
+const z4 = game.world.portals.find((p) => p.zone.id === 4);
+const aimL = new THREE.Vector3();
+z4.group.getWorldPosition(aimL);
+aimL.y = 1.9;
+aimL.project(game.world.camera);
+clickAt((aimL.x * 0.5 + 0.5) * 1280, (-aimL.y * 0.5 + 0.5) * 800);
+await new Promise((r) => setTimeout(r, 250));
+ok(state.mode === 'hub', 'portail verrouillé refusé');
+ok([...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('débloque')), 'message de déverrouillage affiché');
+
+// retour en zone 1 pour la suite
+game.travelTo(1);
+await new Promise((r) => setTimeout(r, 250));
+ok(state.mode === 'zone', 'retour en zone 1');
 
 // ouvre les menus
 for (const id of ['btn-shop', 'btn-pets', 'btn-upgrades', 'btn-rebirth', 'btn-settings']) {
@@ -70,8 +117,6 @@ for (const id of ['btn-shop', 'btn-pets', 'btn-upgrades', 'btn-rebirth', 'btn-se
 document.querySelector('[data-close]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
 // éclosion réelle via le jeu
-const game = window.__petblocs_game;
-ok(!!game, 'instance de jeu accessible');
 state.coins = 100000;
 const pets = game.hatchEgg('oeuf_prairie', 3);
 await new Promise((r) => setTimeout(r, 1400));
@@ -101,5 +146,6 @@ ok(state.stats.totalBroken + (target.hp < target.maxHp ? 1 : 0) > 0, 'les objets
 ok(errors.length === 0, `aucune exception non capturée${errors.length ? ' : ' + errors.map((e) => e.message).join(' | ') : ''}`);
 if (errors.length) console.log(errors[0].stack);
 
+clearTimeout(watchdog);
 console.log(fails === 0 ? '\n🎉 Boot OK' : `\n💥 ${fails} erreur(s) au démarrage`);
 process.exit(fails ? 1 : 0);
