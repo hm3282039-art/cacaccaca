@@ -628,6 +628,43 @@ html, body {
 #loading-fill { height: 100%; width: 8%; background: linear-gradient(90deg, #3ddcff, #ffd24a); transition: width 0.3s; }
 .loading-inner p { color: var(--muted); font-size: 12px; margin-top: 12px; letter-spacing: 0.6px; }
 
+/* ---------------- Erreur fatale ---------------- */
+#fatal-error {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 90;
+  max-width: min(560px, 94vw);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #5a1620, #2b0a10);
+  border: 2px solid #ff5d6c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  line-height: 1.45;
+  color: #ffe3e7;
+}
+#fatal-error b { display: block; font-size: 13px; }
+#fatal-error code { color: #ffb3bd; word-break: break-word; font-size: 11px; }
+#fatal-error button {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 11px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: none;
+  border-bottom: 3px solid #7f1020;
+  background: #ff5d6c;
+  color: #2b0a10;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
 /* ---------------- Responsive ---------------- */
 @media (max-width: 820px) {
   #hud-top { padding: 8px 10px; flex-direction: column; align-items: stretch; gap: 8px; }

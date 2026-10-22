@@ -17,7 +17,9 @@ class Game {
   constructor() {
     this.saved = S.loadState();
     this.state = this.saved || S.createState();
+    const state = this.state;
     window.__petblocs_state = this.state;
+    window.__petblocs_game = this;
 
     this.petTickTimer = 0;
     this.autoAcc = 0;
@@ -500,6 +502,28 @@ class Game {
 
 /* ---------------- démarrage ---------------- */
 
+function showFatalError(err) {
+  const message = String(err?.message || err || 'Erreur inconnue');
+  console.error('[Pet Blocs 99]', err);
+  let el = document.getElementById('fatal-error');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fatal-error';
+    el.innerHTML = '<div><b>Petit souci technique 🛠️</b><code></code></div>';
+    const btn = document.createElement('button');
+    btn.textContent = 'Recharger';
+    btn.addEventListener('click', () => location.reload());
+    el.appendChild(btn);
+    document.getElementById('app')?.appendChild(el);
+  }
+  el.querySelector('code').textContent = message;
+}
+
+window.addEventListener('error', (e) => {
+  if (e?.error) showFatalError(e.error);
+});
+window.addEventListener('unhandledrejection', (e) => showFatalError(e.reason));
+
 function boot() {
   try {
     new Game();
@@ -509,8 +533,10 @@ function boot() {
     if (el) {
       el.innerHTML = `<div class="loading-inner"><div class="loading-logo">😿</div>
         <h1>Oups…</h1>
-        <p style="line-height:1.6">Le jeu n'a pas pu démarrer.<br>${String(err.message || err)}</p></div>`;
+        <p style="line-height:1.6">Le jeu n'a pas pu démarrer.<br>${String(err.message || err)}</p>
+        <button class="primary-btn" style="margin-top:16px" onclick="location.reload()">Recharger</button></div>`;
     }
+    showFatalError(err);
   }
 }
 

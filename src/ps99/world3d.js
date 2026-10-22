@@ -20,6 +20,18 @@ const ZONE_SKY = {
 
 const PARTICLE_POOL = 140;
 
+/** Fabrique de renderer (surchargeable dans les tests). */
+export const rendererFactory = {
+  create(canvas) {
+    return new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
+  },
+};
+
 export class World {
   constructor(canvas, callbacks = {}, options = {}) {
     this.canvas = canvas;
@@ -40,12 +52,7 @@ export class World {
     this.moving = false;
 
     // renderer injectable : permet de tester le monde sans contexte WebGL
-    this.renderer = options.renderer || new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: false,
-      powerPreference: 'high-performance',
-    });
+    this.renderer = options.renderer || rendererFactory.create(canvas);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping ?? THREE.ACESFilmicToneMapping;
