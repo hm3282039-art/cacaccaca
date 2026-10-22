@@ -1,137 +1,135 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bartimaeus Idle RPG</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Pet Blocs 99 — Casse des pièces, éclos des pets</title>
     <link rel="icon" type="image/svg+xml" href="favicon.ico.svg" />
   </head>
   <body>
-    <!-- Loading Screen -->
-    <div id="loading-screen" style="display: flex">
-      <div class="loading-content">
-        <h1>⚔️ Bartimaeus Idle RPG</h1>
-        <div class="loading-bar">
-          <div id="loading-progress" style="width: 0%"></div>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <div id="damage-layer"></div>
+
+      <header id="hud-top">
+        <div class="currency-pills">
+          <div class="pill coins"><span class="ico">🪙</span><span id="stat-coins">0</span></div>
+          <div class="pill gems"><span class="ico">💎</span><span id="stat-gems">0</span></div>
+          <div class="pill diamonds"><span class="ico">✨</span><span id="stat-diamonds">0</span></div>
         </div>
-        <p id="loading-text">Loading assets...</p>
+        <nav class="top-actions">
+          <button class="tool-btn" id="btn-shop"><span class="ticon">🛒</span><span class="tlabel">Boutique</span></button>
+          <button class="tool-btn" id="btn-pets"><span class="ticon">🐾</span><span class="tlabel">Pets</span></button>
+          <button class="tool-btn" id="btn-upgrades"><span class="ticon">⚡</span><span class="tlabel">Améliorer</span></button>
+          <button class="tool-btn" id="btn-rebirth"><span class="ticon">🔄</span><span class="tlabel">Renaissance</span></button>
+          <button class="tool-btn small" id="btn-settings"><span class="ticon">⚙️</span></button>
+        </nav>
+      </header>
+
+      <div id="zone-banner">
+        <span class="zb-name">Zone 1 · Prairie</span>
+        <span class="zb-sub">Casse tout ce qui brille</span>
+      </div>
+
+      <div id="target-hud" class="hidden">
+        <div class="target-row">
+          <span id="target-name">Coffre</span>
+          <span id="target-value">+0 🪙</span>
+        </div>
+        <div class="target-bar"><div id="target-fill"></div></div>
+        <div class="target-hp"><span id="target-hp-text">0 / 0</span> PV</div>
+      </div>
+
+      <div id="pet-dock"></div>
+
+      <div id="hint-bar">
+        <span id="hint-text">Clique sur les pièces pour les casser</span>
+        <span class="hint-dps">DPS : <b id="hint-dps-value">0</b></span>
+      </div>
+
+      <div id="toasts"></div>
+
+      <!-- ============ PANELS ============ -->
+      <div id="panel-backdrop" class="hidden"></div>
+
+      <section class="panel hidden" id="panel-shop" aria-label="Boutique">
+        <div class="panel-card">
+          <header class="panel-head">
+            <h2>🥚 Boutique d'œufs</h2>
+            <button class="close-btn" data-close>✕</button>
+          </header>
+          <div class="panel-body" id="shop-body"></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="panel-pets" aria-label="Inventaire de pets">
+        <div class="panel-card">
+          <header class="panel-head">
+            <h2>🐾 Mes pets <small id="pets-counter">0 / 3</small></h2>
+            <button class="close-btn" data-close>✕</button>
+          </header>
+          <div class="panel-toolbar">
+            <button id="btn-equip-best" class="mini-btn">⭐ Équiper les meilleurs</button>
+            <button id="btn-sell-dupes" class="mini-btn danger">🗑️ Vendre les doublons</button>
+          </div>
+          <div class="panel-body" id="pets-body"></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="panel-upgrades" aria-label="Améliorations">
+        <div class="panel-card">
+          <header class="panel-head">
+            <h2>⚡ Améliorations</h2>
+            <button class="close-btn" data-close>✕</button>
+          </header>
+          <div class="panel-body" id="upgrades-body"></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="panel-rebirth" aria-label="Renaissance">
+        <div class="panel-card">
+          <header class="panel-head">
+            <h2>🔄 Renaissance</h2>
+            <button class="close-btn" data-close>✕</button>
+          </header>
+          <div class="panel-body" id="rebirth-body"></div>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="panel-settings" aria-label="Réglages">
+        <div class="panel-card">
+          <header class="panel-head">
+            <h2>⚙️ Réglages</h2>
+            <button class="close-btn" data-close>✕</button>
+          </header>
+          <div class="panel-body" id="settings-body"></div>
+        </div>
+      </section>
+
+      <!-- ============ HATCH OVERLAY ============ -->
+      <div id="hatch-overlay" class="hidden">
+        <div class="hatch-stage">
+          <div class="hatch-egg" id="hatch-egg">
+            <div class="egg-shell"></div>
+            <div class="egg-shine"></div>
+          </div>
+          <div class="hatch-result hidden" id="hatch-result"></div>
+          <div class="hatch-title" id="hatch-title">Éclosion…</div>
+          <button class="primary-btn hidden" id="hatch-close">Super !</button>
+        </div>
+      </div>
+
+      <div id="loading">
+        <div class="loading-inner">
+          <div class="loading-logo">🐾</div>
+          <h1>PET BLOCS <span>99</span></h1>
+          <div class="loading-bar"><div id="loading-fill"></div></div>
+          <p>Construction du monde…</p>
+        </div>
       </div>
     </div>
 
-    <!-- Main Game Wrapper: Three-Panel Layout -->
-    <div id="game-wrapper" style="display: none">
-      <!-- Left Sidebar: Hero Info & Upgrades -->
-      <aside id="left-panel">
-        <div class="hero-portrait-section">
-          <img id="hero-portrait" src="" alt="Bartimaeus" style="display: none" />
-          <div class="hero-portrait-placeholder">⚔️</div>
-          <h2 id="hero-name">Bartimaeus</h2>
-          <div id="hero-level">Level <span>1</span></div>
-        </div>
-
-        <div class="hero-stats-section">
-          <div class="stat-row">
-            <span class="stat-label">❤️ HP:</span>
-            <div class="stat-bar">
-              <div class="stat-fill hp-fill"></div>
-            </div>
-            <span class="stat-text">500/500</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">⚔️ ATK:</span>
-            <span id="hero-atk">30</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">🛡️ DEF:</span>
-            <span id="hero-def">25</span>
-          </div>
-        </div>
-
-        <div class="resources-section">
-          <div class="resource-item">
-            <span class="resource-icon">💰</span>
-            <span id="gold-display">1000</span>
-          </div>
-          <div class="resource-item">
-            <span class="resource-icon">💎</span>
-            <span id="gem-display">50</span>
-          </div>
-        </div>
-
-        <div class="upgrades-section">
-          <h3>Upgrades</h3>
-          <button id="upgrade-stats-btn" class="upgrade-btn">
-            <span class="upgrade-name">Upgrade Stats</span>
-            <span class="upgrade-cost">100 💰</span>
-          </button>
-        </div>
-
-        <div class="skills-section">
-          <h3>Active Skills</h3>
-          <div id="skill-buttons">
-            <!-- Skill buttons added by JavaScript -->
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center Panel: Battle Arena -->
-      <main id="center-panel">
-        <div id="stage-info">
-          <span>Stage: <span id="stage-number">1</span></span>
-          <span>Wave: <span id="wave-number">1</span></span>
-        </div>
-
-        <div id="battle-container">
-          <canvas id="battle-canvas"></canvas>
-
-          <!-- Battle Controls Overlay -->
-          <div id="battle-controls">
-            <button id="pause-btn" class="control-btn">⏸️ Pause</button>
-            <div id="speed-controls">
-              <button class="control-btn speed-btn" data-speed="1">1x</button>
-              <button class="control-btn speed-btn" data-speed="2">2x</button>
-              <button class="control-btn speed-btn" data-speed="4">4x</button>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      <!-- Right Sidebar: Adventure Log -->
-      <aside id="right-panel">
-        <div class="log-header">
-          <h3>📜 Adventure Log</h3>
-          <button id="clear-log-btn" class="icon-btn" title="Clear log">🗑️</button>
-        </div>
-
-        <div id="adventure-log" class="log-container">
-          <!-- Log entries added dynamically -->
-        </div>
-      </aside>
-    </div>
-
-    <!-- Modal: AFK Rewards Popup -->
-    <div id="afk-modal" class="modal" style="display: none">
-      <div class="modal-content afk-loot">
-        <h2>AFK Loot!</h2>
-        <div class="loot-chest">🎁</div>
-        <p id="afk-time-away">
-          You were away for: <span id="time-away">0m</span>
-        </p>
-        <div class="afk-rewards">
-          <div class="afk-reward">
-            <span class="reward-icon">💰</span>
-            <span id="afk-gold">+0</span>
-          </div>
-          <div class="afk-reward">
-            <span class="reward-icon">💎</span>
-            <span id="afk-gems">+0</span>
-          </div>
-        </div>
-        <button class="action-btn" id="close-afk">Collect</button>
-      </div>
-    </div>
-
-    <!-- Vite Entry Point -->
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/ps99/main.js"></script>
   </body>
 </html>
