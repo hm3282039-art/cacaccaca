@@ -211,3 +211,5 @@ class AssetManager {
     };
   }
 }
+
+globalThis.AssetManager = AssetManager;

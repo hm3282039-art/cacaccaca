@@ -152,3 +152,9 @@ function loadStageFromSave(saveState) {
     }
     return 1; // Default to stage 1
 }
+
+globalThis.StorageManager = StorageManager;
+globalThis.createSaveState = createSaveState;
+globalThis.loadHeroesFromSave = loadHeroesFromSave;
+globalThis.loadResourcesFromSave = loadResourcesFromSave;
+globalThis.loadStageFromSave = loadStageFromSave;

@@ -208,3 +208,5 @@ class ResourceManager {
         this.lastSaveTime = data.lastSaveTime || Date.now();
     }
 }
+
+globalThis.ResourceManager = ResourceManager;

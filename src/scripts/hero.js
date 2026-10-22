@@ -240,3 +240,6 @@ function createStartingHeroes() {
     // Tank: High HP, balanced damage and defense for solo survival
     return new Hero(0, 'Bartimaeus', 'Tank', 500, 30, 25);
 }
+
+globalThis.Hero = Hero;
+globalThis.createStartingHeroes = createStartingHeroes;

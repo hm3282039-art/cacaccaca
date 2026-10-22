@@ -292,3 +292,7 @@ class SkillManager {
     return this.skills.find(s => s.id === skillId) || null;
   }
 }
+
+globalThis.Skill = Skill;
+globalThis.SKILLS = SKILLS;
+globalThis.SkillManager = SkillManager;

@@ -318,6 +318,7 @@ class Game {
       this.resourceManager.getGems(),
       this.currentStage
     );
+    this.uiManager.updateHeroPanel(this.heroes, this.battleManager.currentWave);
 
     // In horde mode, we're always in IDLE mode (no boss fights yet)
     this.uiManager.updateBattleControls(null, 'IDLE');
@@ -450,13 +451,21 @@ class Game {
 window.addEventListener('load', () => {
   console.log('Page loaded! Starting game...');
 
-  // Create and start the game
-  const game = new Game();
+  try {
+    // Create and start the game
+    const game = new Game();
 
-  // Make game accessible in browser console (for debugging)
-  window.game = game;
+    // Make game accessible in browser console (for debugging)
+    window.game = game;
 
-  console.log('Game started! Type "game" in console to inspect game state.');
+    console.log('Game started! Type "game" in console to inspect game state.');
+  } catch (error) {
+    console.error('Failed to start game:', error);
+    const loadingText = document.getElementById('loading-text');
+    if (loadingText) {
+      loadingText.textContent = 'Failed to start: ' + (error && error.message ? error.message : error);
+    }
+  }
 });
 
 // ========================================
@@ -468,3 +477,5 @@ window.addEventListener('load', () => {
 // - game.resourceManager.addGems(100) - Add 100 gems
 // - game.currentStage = 5 - Jump to stage 5
 // - game.storageManager.deleteSave() - Delete save (restart)
+
+globalThis.Game = Game;

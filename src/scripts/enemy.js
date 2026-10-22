@@ -174,3 +174,8 @@ function getStageGemReward(stageLevel) {
     // Stage 10 = 20 gems
     return stageLevel * 2;
 }
+
+globalThis.Enemy = Enemy;
+globalThis.createEnemiesForStage = createEnemiesForStage;
+globalThis.getStageGoldReward = getStageGoldReward;
+globalThis.getStageGemReward = getStageGemReward;

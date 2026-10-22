@@ -53,6 +53,14 @@ class BattleManager {
     // Heal hero to full health
     this.hero.heal();
 
+    if (!this.adventureLog && typeof AdventureLog !== 'undefined') {
+      this.adventureLog = new AdventureLog();
+      this.adventureLog.init();
+    }
+    if (typeof SkillManager !== 'undefined') {
+      this.skillManager = new SkillManager(this.hero);
+    }
+
     // Spawn initial wave
     this.spawnWave();
 
@@ -350,3 +358,5 @@ class BattleManager {
     this.isBattleActive = false;
   }
 }
+
+globalThis.BattleManager = BattleManager;

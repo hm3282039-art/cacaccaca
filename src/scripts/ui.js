@@ -112,6 +112,20 @@ class UIManager {
     this.drawDamageNumbers(damageNumbers);
   }
 
+  sprite(category, name) {
+    const manager = window.game && window.game.assetManager;
+    const img = manager && manager.get ? manager.get(category, name) : null;
+    if (img && img.complete && img.naturalWidth) return img;
+    return null;
+  }
+
+  backgroundNameForStage(stage) {
+    if (stage <= 3) return 'forest';
+    if (stage <= 6) return 'dungeon';
+    if (stage <= 9) return 'volcano';
+    return 'castle';
+  }
+
   /**
    * Clear the entire canvas
    */
@@ -123,6 +137,14 @@ class UIManager {
    * Draw background gradient and effects
    */
   drawBackground() {
+    const stage = (window.game && window.game.currentStage) || 1;
+    const background = this.sprite('backgrounds', this.backgroundNameForStage(stage));
+
+    if (background) {
+      this.ctx.drawImage(background, 0, 0, this.width, this.height);
+      return;
+    }
+
     // Draw a subtle gradient background
     const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
     gradient.addColorStop(0, '#2d1b3d');
@@ -130,14 +152,6 @@ class UIManager {
 
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(0, 0, this.width, this.height);
-
-    // Draw dividing line between heroes and enemies
-    this.ctx.strokeStyle = 'rgba(167, 139, 250, 0.3)';
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    this.ctx.moveTo(this.width / 2, 0);
-    this.ctx.lineTo(this.width / 2, this.height);
-    this.ctx.stroke();
   }
 
   /**
@@ -159,8 +173,11 @@ class UIManager {
       hero.x = x;
       hero.y = y;
 
-      // Draw character
-      this.drawCharacter(x, y, hero.color, hero.isAlive());
+      // Draw the hero art from this repo, or a colored fallback
+      const heroSprite = this.sprite('heroes', 'bartimaeus');
+      if (!this.drawSprite(heroSprite, x, y, hero.isAlive())) {
+        this.drawCharacter(x, y, hero.color, hero.isAlive());
+      }
 
       // Draw health bar
       this.drawHealthBar(x, y - 40, hero.getHealthPercent(), true);
@@ -184,8 +201,11 @@ class UIManager {
       enemy.x = x;
       enemy.y = y;
 
-      // Draw character
-      this.drawCharacter(x, y, enemy.color, enemy.isAlive());
+      // Draw the enemy art from this repo, or a colored fallback
+      const enemySprite = this.sprite('enemies', (enemy.type || '').toLowerCase());
+      if (!this.drawSprite(enemySprite, x, y, enemy.isAlive())) {
+        this.drawCharacter(x, y, enemy.color, enemy.isAlive());
+      }
 
       // Draw health bar
       this.drawHealthBar(x, y - 40, enemy.getHealthPercent(), false);
@@ -203,6 +223,17 @@ class UIManager {
    * @param {string} color - Color
    * @param {boolean} isAlive - If false, draw as gray/dead
    */
+  drawSprite(img, x, y, isAlive) {
+    if (!img) return false;
+    const width = Math.round(this.characterSize * 1.45);
+    const height = Math.round(width * 1.25);
+    this.ctx.save();
+    if (!isAlive) this.ctx.globalAlpha = 0.35;
+    this.ctx.drawImage(img, x - width / 2, y - height / 2, width, height);
+    this.ctx.restore();
+    return true;
+  }
+
   drawCharacter(x, y, color, isAlive) {
     const size = this.characterSize;
 
@@ -348,6 +379,80 @@ class UIManager {
     document.getElementById('stage-number').textContent = stage;
   }
 
+  updateHeroPanel(hero, wave) {
+    if (!hero) return;
+
+    const name = document.getElementById('hero-name');
+    if (name) name.textContent = hero.name;
+    const level = document.querySelector('#hero-level span');
+    if (level) level.textContent = hero.level;
+    const atk = document.getElementById('hero-atk');
+    if (atk) atk.textContent = hero.attack;
+    const def = document.getElementById('hero-def');
+    if (def) def.textContent = hero.defense;
+
+    const hpText = document.querySelector('#left-panel .stat-text');
+    if (hpText) hpText.textContent = `${Math.floor(hero.health)}/${hero.maxHealth}`;
+    const hpFill = document.querySelector('#left-panel .hp-fill');
+    if (hpFill) hpFill.style.width = `${Math.round(hero.getHealthPercent() * 100)}%`;
+
+    const cost = document.querySelector('#upgrade-stats-btn .upgrade-cost');
+    if (cost) cost.textContent = `${hero.getUpgradeCost().toLocaleString()} 💰`;
+
+    const waveEl = document.getElementById('wave-number');
+    if (waveEl && wave != null) waveEl.textContent = wave;
+
+    const portrait = document.getElementById('hero-portrait');
+    const placeholder = document.querySelector('.hero-portrait-placeholder');
+    const img = this.sprite('heroes', 'bartimaeus');
+    if (portrait && img) {
+      if (portrait.getAttribute('src') !== img.src) portrait.src = img.src;
+      portrait.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+
+    this.updateSkillButtons();
+  }
+
+  updateSkillButtons() {
+    const box = document.getElementById('skill-buttons');
+    const battle = window.game && window.game.battleManager;
+    const manager = battle && battle.skillManager;
+    if (!box || !manager) return;
+
+    const skills = manager.getSkills();
+    const signature = skills.map(skill => skill.id).join(',');
+    if (box.dataset.signature !== signature) {
+      box.dataset.signature = signature;
+      box.innerHTML = '';
+      skills.forEach(skill => {
+        const button = document.createElement('button');
+        button.className = 'skill-btn';
+        button.dataset.skill = skill.id;
+        button.title = `${skill.name} — ${skill.description}`;
+        button.textContent = skill.name;
+        const icon = this.sprite('ui', `skill_${skill.id}`);
+        if (icon) {
+          button.style.backgroundImage = `url("${icon.src}")`;
+          button.style.color = '#fff';
+          button.style.textShadow = '0 1px 3px #000';
+        }
+        button.addEventListener('click', () => {
+          const current = window.game && window.game.battleManager;
+          if (!current || !current.skillManager) return;
+          const targets = (current.enemies || []).filter(enemy => enemy.isAlive());
+          current.skillManager.useSkill(skill.id, targets, current);
+        });
+        box.appendChild(button);
+      });
+    }
+
+    box.querySelectorAll('.skill-btn').forEach(button => {
+      const skill = skills.find(item => item.id === button.dataset.skill);
+      if (skill) button.classList.toggle('on-cooldown', !skill.canUse());
+    });
+  }
+
   /**
    * Update upgrade modal with hero information
    *
@@ -452,3 +557,5 @@ class UIManager {
     }
   }
 }
+
+globalThis.UIManager = UIManager;

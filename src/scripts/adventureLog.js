@@ -186,3 +186,5 @@ class AdventureLog {
     this.add('story', `🔄 ${message}`);
   }
 }
+
+globalThis.AdventureLog = AdventureLog;

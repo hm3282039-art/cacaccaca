@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/bartimaeus-idle-rpg/',
+  base: '/cacaccaca/',
   root: '.',
   publicDir: 'assets',
   build: {
@@ -12,11 +12,14 @@ export default defineConfig({
         main: './index.html'
       }
     },
-    minify: 'terser',
+    minify: 'esbuild',
     sourcemap: true
   },
   server: {
     port: 3000,
-    open: true
+    host: '0.0.0.0',
+    open: false,
+    allowedHosts: true,
+    hmr: false
   }
 });
